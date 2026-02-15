@@ -29,11 +29,20 @@ var (
 	featureHeadingRe = regexp.MustCompile(`^##\s+Feature\s+(\d+):\s*(.+)$`)
 	overviewH2Re     = regexp.MustCompile(`^##\s+Overview\s*$`)
 	overviewH3Re     = regexp.MustCompile(`^###\s+Overview\s*$`)
-	taskHeadingRe    = regexp.MustCompile(`^###\s+Task\s+(\d+)(?:\.(\d+))?:\s*(.+)$`)
+	taskHeadingRe    = regexp.MustCompile(`^###\s+Task\s+(\d+)(?:\.(\d+)([a-z])?)?:\s*(.+)$`)
 	statusTagRe      = regexp.MustCompile(`\[(\w+)\]\s*$`)
 	separatorRe      = regexp.MustCompile(`^---+\s*$`)
 	h2Re             = regexp.MustCompile(`^##\s+`)
 	h3Re             = regexp.MustCompile(`^###\s+`)
+
+	// Task metadata patterns.
+	complexityRe = regexp.MustCompile(`^\*\*Complexity:\*\*\s*(.+)$`)
+	filesRe      = regexp.MustCompile(`^\*\*Files(?:\s+in\s+Scope)?:\*\*\s*(.+)$`)
+	dependsOnRe  = regexp.MustCompile(`^\*\*Depends\s+on:\*\*\s*(.+)$`)
+	criteriaHeadingRe = regexp.MustCompile(`^\*\*Acceptance\s+Criteria:\*\*\s*$`)
+	criterionRe       = regexp.MustCompile(`^-\s+\[([ x])\]\s+(.+)$`)
+	commentRe         = regexp.MustCompile(`^>\s*💬\s*(.+)$`)
+	commentContRe = regexp.MustCompile(`^>\s*(.+)$`)
 )
 
 // ParseFile reads a plan markdown file from disk and parses it into a Plan.
@@ -79,10 +88,13 @@ func Parse(r io.Reader) (*models.Plan, error) {
 	var currentTask *models.Task
 	sawFeatureHeading := false
 
+	inComment := false // tracking multi-line > 💬 comments
+
 	// flush saves accumulated description text into the current section.
 	flush := func() {
 		text := strings.TrimSpace(descBuf.String())
 		descBuf.Reset()
+		inComment = false
 		if text == "" {
 			return
 		}
@@ -185,10 +197,11 @@ func Parse(r io.Reader) (*models.Plan, error) {
 
 			featureNum := atoi(m[1])
 			taskNum := 0
-			title := strings.TrimSpace(m[3])
+			suffix := m[3] // letter suffix (e.g. "b") or ""
+			title := strings.TrimSpace(m[4])
 
 			if m[2] != "" {
-				// Multi-feature format: Task N.M
+				// Multi-feature format: Task N.M or Task N.Mb
 				taskNum = atoi(m[2])
 			} else {
 				// Single-feature format: Task N → taskNum = N, featureNum = 1
@@ -216,6 +229,7 @@ func Parse(r io.Reader) (*models.Plan, error) {
 			t := models.Task{
 				FeatureNumber: featureNum,
 				TaskNumber:    taskNum,
+				Suffix:        suffix,
 				Title:         title,
 				Status:        status,
 			}
@@ -238,7 +252,61 @@ func Parse(r io.Reader) (*models.Plan, error) {
 
 		// Accumulate content into current section.
 		switch cur {
-		case stateOverview, stateFeature, stateFeatureOver, stateTask:
+		case stateOverview, stateFeature, stateFeatureOver:
+			descBuf.WriteString(line)
+			descBuf.WriteString("\n")
+		case stateTask:
+			if currentTask == nil {
+				break
+			}
+			// Try to extract task metadata before falling through to description.
+			if m := complexityRe.FindStringSubmatch(line); m != nil {
+				currentTask.Complexity = models.Complexity(strings.TrimSpace(m[1]))
+				continue
+			}
+			if m := filesRe.FindStringSubmatch(line); m != nil {
+				for _, f := range strings.Split(m[1], ",") {
+					f = strings.TrimSpace(f)
+					if f != "" {
+						currentTask.Files = append(currentTask.Files, f)
+					}
+				}
+				continue
+			}
+			if m := dependsOnRe.FindStringSubmatch(line); m != nil {
+				for _, d := range strings.Split(m[1], ",") {
+					d = strings.TrimSpace(d)
+					if d != "" {
+						currentTask.DependsOn = append(currentTask.DependsOn, d)
+					}
+				}
+				continue
+			}
+			if criteriaHeadingRe.MatchString(line) {
+				continue
+			}
+			if m := criterionRe.FindStringSubmatch(line); m != nil {
+				inComment = false
+				currentTask.Criteria = append(currentTask.Criteria, models.Criterion{
+					Description: strings.TrimSpace(m[2]),
+					IsMet:       m[1] == "x",
+				})
+				continue
+			}
+			if m := commentRe.FindStringSubmatch(line); m != nil {
+				inComment = true
+				currentTask.Comments = append(currentTask.Comments, strings.TrimSpace(m[1]))
+				continue
+			}
+			// Multi-line comment continuation: > lines following a 💬 line.
+			if inComment {
+				if m := commentContRe.FindStringSubmatch(line); m != nil {
+					idx := len(currentTask.Comments) - 1
+					currentTask.Comments[idx] += "\n" + strings.TrimSpace(m[1])
+					continue
+				}
+				inComment = false
+			}
 			descBuf.WriteString(line)
 			descBuf.WriteString("\n")
 		}

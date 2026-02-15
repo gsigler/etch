@@ -54,22 +54,26 @@ func TestTaskFullID(t *testing.T) {
 		name          string
 		featureNumber int
 		taskNumber    int
+		suffix        string
 		want          string
 	}{
-		{"single digit", 1, 2, "1.2"},
-		{"first task", 1, 1, "1.1"},
-		{"higher feature", 3, 5, "3.5"},
-		{"double digits", 12, 34, "12.34"},
+		{"single digit", 1, 2, "", "1.2"},
+		{"first task", 1, 1, "", "1.1"},
+		{"higher feature", 3, 5, "", "3.5"},
+		{"double digits", 12, 34, "", "12.34"},
+		{"with suffix", 1, 3, "b", "1.3b"},
+		{"suffix a", 2, 1, "a", "2.1a"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			task := &Task{
 				FeatureNumber: tt.featureNumber,
 				TaskNumber:    tt.taskNumber,
+				Suffix:        tt.suffix,
 			}
 			got := task.FullID()
 			if got != tt.want {
-				t.Errorf("Task{%d, %d}.FullID() = %q, want %q", tt.featureNumber, tt.taskNumber, got, tt.want)
+				t.Errorf("Task{%d, %d, %q}.FullID() = %q, want %q", tt.featureNumber, tt.taskNumber, tt.suffix, got, tt.want)
 			}
 		})
 	}
@@ -83,6 +87,7 @@ func TestPlanTaskByID(t *testing.T) {
 				Tasks: []Task{
 					{FeatureNumber: 1, TaskNumber: 1, Title: "Task 1.1"},
 					{FeatureNumber: 1, TaskNumber: 2, Title: "Task 1.2"},
+					{FeatureNumber: 1, TaskNumber: 2, Suffix: "b", Title: "Task 1.2b"},
 				},
 			},
 			{
@@ -101,6 +106,7 @@ func TestPlanTaskByID(t *testing.T) {
 	}{
 		{"1.1", "Task 1.1", false},
 		{"1.2", "Task 1.2", false},
+		{"1.2b", "Task 1.2b", false},
 		{"2.1", "Task 2.1", false},
 		{"3.1", "", true},
 		{"0.0", "", true},

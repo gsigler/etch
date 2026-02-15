@@ -83,6 +83,7 @@ type Feature struct {
 type Task struct {
 	FeatureNumber int        `json:"feature_number"`
 	TaskNumber    int        `json:"task_number"`
+	Suffix        string     `json:"suffix,omitempty"`
 	Title         string     `json:"title"`
 	Status        Status     `json:"status"`
 	Complexity    Complexity `json:"complexity"`
@@ -93,9 +94,9 @@ type Task struct {
 	Comments      []string   `json:"comments"`
 }
 
-// FullID returns the task identifier in "feature.task" format (e.g. "1.2").
+// FullID returns the task identifier in "feature.task" format (e.g. "1.2" or "1.3b").
 func (t *Task) FullID() string {
-	return fmt.Sprintf("%d.%d", t.FeatureNumber, t.TaskNumber)
+	return fmt.Sprintf("%d.%d%s", t.FeatureNumber, t.TaskNumber, t.Suffix)
 }
 
 // Criterion represents a single acceptance criterion for a task.

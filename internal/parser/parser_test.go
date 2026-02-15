@@ -236,7 +236,7 @@ Description.
 	}
 }
 
-func TestParse_TaskDescriptionCapture(t *testing.T) {
+func TestParse_TaskMetadataExtraction(t *testing.T) {
 	input := `# Plan: Desc Test
 
 ## Feature 1: Stuff
@@ -250,7 +250,6 @@ First paragraph of description.
 
 Second paragraph with more detail.
 
-**Acceptance Criteria:**
 - [ ] Criterion one
 - [x] Criterion two
 `
@@ -261,15 +260,38 @@ Second paragraph with more detail.
 	}
 
 	task := plan.Features[0].Tasks[0]
-	// Description should contain the raw body for 1.3b to parse later.
-	if !strings.Contains(task.Description, "**Complexity:** medium") {
-		t.Error("description should contain complexity metadata line")
+
+	// Metadata should be extracted, not in description.
+	if task.Complexity != "medium" {
+		t.Errorf("complexity = %q, want %q", task.Complexity, "medium")
 	}
+	if len(task.Files) != 2 || task.Files[0] != "foo.go" || task.Files[1] != "bar.go" {
+		t.Errorf("files = %v, want [foo.go bar.go]", task.Files)
+	}
+	if len(task.DependsOn) != 1 || task.DependsOn[0] != "Task 1.0" {
+		t.Errorf("depends_on = %v, want [Task 1.0]", task.DependsOn)
+	}
+
+	// Description should contain only the paragraphs.
 	if !strings.Contains(task.Description, "First paragraph") {
 		t.Error("description should contain first paragraph")
 	}
-	if !strings.Contains(task.Description, "- [ ] Criterion one") {
-		t.Error("description should contain acceptance criteria")
+	if !strings.Contains(task.Description, "Second paragraph") {
+		t.Error("description should contain second paragraph")
+	}
+	if strings.Contains(task.Description, "**Complexity:**") {
+		t.Error("description should NOT contain complexity metadata line")
+	}
+
+	// Acceptance criteria.
+	if len(task.Criteria) != 2 {
+		t.Fatalf("criteria count = %d, want 2", len(task.Criteria))
+	}
+	if task.Criteria[0].Description != "Criterion one" || task.Criteria[0].IsMet {
+		t.Errorf("criterion 0 = %+v, want {Criterion one, false}", task.Criteria[0])
+	}
+	if task.Criteria[1].Description != "Criterion two" || !task.Criteria[1].IsMet {
+		t.Errorf("criterion 1 = %+v, want {Criterion two, true}", task.Criteria[1])
 	}
 }
 
@@ -340,31 +362,12 @@ func TestParseFile_SpecFile(t *testing.T) {
 		title     string
 		taskCount int
 	}{
-		{1, "Core Data Layer & Plan Parser", 6}, // 1.1, 1.2, 1.3, 1.3b, 1.4, 1.5, 1.6 = 7... let me count
+		{1, "Core Data Layer & Plan Parser", 7}, // 1.1, 1.2, 1.3, 1.3b, 1.4, 1.5, 1.6
 		{2, "Plan Generation & AI Integration", 4},
 		{3, "Context Generation & Status", 3},
 		{4, "Interactive TUI Review Mode", 3},
 		{5, "Developer Experience & Polish", 2},
 	}
-
-	// Count tasks in feature 1: 1.1, 1.2, 1.3, 1.3b, 1.4, 1.5, 1.6 = 7
-	// Wait — Task 1.3b has heading "### Task 1.3b:" which won't match \d+ for the second group.
-	// Let me re-check the regex. The heading is "### Task 1.3b: ..." — the regex expects digits.
-	// "1.3b" won't match `(\d+)(?:\.(\d+))?` — the "b" will cause issues.
-	// Actually looking at the regex: `^###\s+Task\s+(\d+)(?:\.(\d+))?:\s*(.+)$`
-	// For "### Task 1.3b:" — it'll match group 1 = "1", then try \.(\d+) which matches ".3"
-	// but then needs ":" next. The actual text is ".3b:" — after ".3" the regex expects ":" or end,
-	// but finds "b" so the optional group captures ".3" and then "b:" doesn't match ":"...
-	// Actually let me think more carefully. The full heading is:
-	// "### Task 1.3b: Plan parser — task metadata extraction [pending]"
-	// Regex: ^###\s+Task\s+(\d+)(?:\.(\d+))?:\s*(.+)$
-	// After matching "1" in (\d+), it tries (?:\.(\d+))? which matches ".3"
-	// Then it needs ":" — but next char is "b", so the optional group backtracks.
-	// Without the optional group, after "1" it needs ":" — but next is ".3b:", no match.
-	// So this heading WON'T match. Task 1.3b will be skipped.
-	// Feature 1 tasks: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6 = 6 (1.3b skipped)
-
-	expectedFeatures[0].taskCount = 6 // 1.3b won't match (has letter suffix)
 
 	for i, expected := range expectedFeatures {
 		f := plan.Features[i]
@@ -398,8 +401,31 @@ func TestParseFile_SpecFile(t *testing.T) {
 	if task13.Title != "Plan markdown parser — structure" {
 		t.Errorf("task 1.3 title = %q", task13.Title)
 	}
-	if task13.Status != models.StatusPending {
-		t.Errorf("task 1.3 status = %q, want pending", task13.Status)
+
+	// Verify Task 1.3b exists and parses correctly (letter-suffix fix).
+	task13b := plan.TaskByID("1.3b")
+	if task13b == nil {
+		t.Fatal("task 1.3b not found — letter-suffix regex fix failed")
+	}
+	if task13b.Suffix != "b" {
+		t.Errorf("task 1.3b suffix = %q, want %q", task13b.Suffix, "b")
+	}
+	if task13b.FeatureNumber != 1 || task13b.TaskNumber != 3 {
+		t.Errorf("task 1.3b numbers = %d.%d, want 1.3", task13b.FeatureNumber, task13b.TaskNumber)
+	}
+
+	// Verify metadata extraction on a task with known metadata.
+	if task13b.Complexity != "medium" {
+		t.Errorf("task 1.3b complexity = %q, want %q", task13b.Complexity, "medium")
+	}
+	if len(task13b.Files) < 2 {
+		t.Errorf("task 1.3b files = %v, want at least 2 files", task13b.Files)
+	}
+	if len(task13b.DependsOn) == 0 {
+		t.Error("task 1.3b depends_on should not be empty")
+	}
+	if len(task13b.Criteria) == 0 {
+		t.Error("task 1.3b criteria should not be empty")
 	}
 }
 
@@ -415,6 +441,192 @@ func TestParse_PlanOnlyTitle(t *testing.T) {
 	}
 	if len(plan.Features) != 0 {
 		t.Errorf("feature count = %d, want 0", len(plan.Features))
+	}
+}
+
+func TestParse_LetterSuffixTaskID(t *testing.T) {
+	input := `# Plan: Suffix Test
+
+## Feature 1: Core
+
+### Task 1.1: First task [completed]
+Do the first thing.
+
+### Task 1.1b: Follow-up task [pending]
+**Complexity:** small
+Follow up on the first thing.
+
+### Task 1.2: Second task [in_progress]
+Do the second thing.
+`
+
+	plan, err := Parse(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	f := plan.Features[0]
+	if len(f.Tasks) != 3 {
+		t.Fatalf("task count = %d, want 3", len(f.Tasks))
+	}
+
+	// Task 1.1
+	if f.Tasks[0].FullID() != "1.1" {
+		t.Errorf("task 0 id = %q, want 1.1", f.Tasks[0].FullID())
+	}
+	if f.Tasks[0].Suffix != "" {
+		t.Errorf("task 0 suffix = %q, want empty", f.Tasks[0].Suffix)
+	}
+
+	// Task 1.1b
+	if f.Tasks[1].FullID() != "1.1b" {
+		t.Errorf("task 1 id = %q, want 1.1b", f.Tasks[1].FullID())
+	}
+	if f.Tasks[1].Suffix != "b" {
+		t.Errorf("task 1 suffix = %q, want b", f.Tasks[1].Suffix)
+	}
+	if f.Tasks[1].Complexity != "small" {
+		t.Errorf("task 1.1b complexity = %q, want small", f.Tasks[1].Complexity)
+	}
+
+	// Task 1.2
+	if f.Tasks[2].FullID() != "1.2" {
+		t.Errorf("task 2 id = %q, want 1.2", f.Tasks[2].FullID())
+	}
+}
+
+func TestParse_ReviewComments(t *testing.T) {
+	input := `# Plan: Comment Test
+
+## Feature 1: Core
+
+### Task 1.1: A task [pending]
+Description here.
+
+> 💬 This is a single-line comment.
+
+> 💬 This is a multi-line comment
+> that spans two lines
+> and even three.
+
+Some more description.
+
+> 💬 Another comment.
+`
+
+	plan, err := Parse(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	task := plan.Features[0].Tasks[0]
+	if len(task.Comments) != 3 {
+		t.Fatalf("comment count = %d, want 3", len(task.Comments))
+	}
+
+	if task.Comments[0] != "This is a single-line comment." {
+		t.Errorf("comment 0 = %q", task.Comments[0])
+	}
+	expected := "This is a multi-line comment\nthat spans two lines\nand even three."
+	if task.Comments[1] != expected {
+		t.Errorf("comment 1 = %q, want %q", task.Comments[1], expected)
+	}
+	if task.Comments[2] != "Another comment." {
+		t.Errorf("comment 2 = %q", task.Comments[2])
+	}
+}
+
+func TestParse_TaskNoMetadata(t *testing.T) {
+	input := `# Plan: Minimal Task Test
+
+## Feature 1: Core
+
+### Task 1.1: Bare task [pending]
+Just a plain description with no metadata at all.
+`
+
+	plan, err := Parse(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	task := plan.Features[0].Tasks[0]
+	if task.Complexity != "" {
+		t.Errorf("complexity = %q, want empty", task.Complexity)
+	}
+	if len(task.Files) != 0 {
+		t.Errorf("files = %v, want empty", task.Files)
+	}
+	if len(task.DependsOn) != 0 {
+		t.Errorf("depends_on = %v, want empty", task.DependsOn)
+	}
+	if len(task.Criteria) != 0 {
+		t.Errorf("criteria = %v, want empty", task.Criteria)
+	}
+	if len(task.Comments) != 0 {
+		t.Errorf("comments = %v, want empty", task.Comments)
+	}
+	if !strings.Contains(task.Description, "Just a plain description") {
+		t.Errorf("description = %q, should contain plain description", task.Description)
+	}
+}
+
+func TestParse_TaskNoCriteria(t *testing.T) {
+	input := `# Plan: No Criteria
+
+## Feature 1: Core
+
+### Task 1.1: Has metadata no criteria [pending]
+**Complexity:** large
+**Files:** main.go
+**Depends on:** Task 0.1, Task 0.2
+
+Description of the task.
+`
+
+	plan, err := Parse(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	task := plan.Features[0].Tasks[0]
+	if task.Complexity != "large" {
+		t.Errorf("complexity = %q, want large", task.Complexity)
+	}
+	if len(task.Files) != 1 || task.Files[0] != "main.go" {
+		t.Errorf("files = %v, want [main.go]", task.Files)
+	}
+	if len(task.DependsOn) != 2 {
+		t.Fatalf("depends_on count = %d, want 2", len(task.DependsOn))
+	}
+	if task.DependsOn[0] != "Task 0.1" || task.DependsOn[1] != "Task 0.2" {
+		t.Errorf("depends_on = %v", task.DependsOn)
+	}
+	if len(task.Criteria) != 0 {
+		t.Errorf("criteria = %v, want empty", task.Criteria)
+	}
+}
+
+func TestParse_FilesInScope(t *testing.T) {
+	input := `# Plan: Files In Scope Test
+
+## Feature 1: Core
+
+### Task 1.1: A task [pending]
+**Files in Scope:** internal/parser/parser.go, internal/parser/parser_test.go
+`
+
+	plan, err := Parse(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	task := plan.Features[0].Tasks[0]
+	if len(task.Files) != 2 {
+		t.Fatalf("files count = %d, want 2", len(task.Files))
+	}
+	if task.Files[0] != "internal/parser/parser.go" {
+		t.Errorf("file 0 = %q", task.Files[0])
 	}
 }
 
