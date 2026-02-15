@@ -26,6 +26,7 @@ func Execute() error {
 			replanCmd(),
 			listCmd(),
 			openCmd(),
+			deleteCmd(),
 		},
 	}
 

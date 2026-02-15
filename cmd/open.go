@@ -2,7 +2,11 @@ package cmd
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 
+	etchcontext "github.com/gsigler/etch/internal/context"
 	"github.com/urfave/cli/v2"
 )
 
@@ -12,8 +16,60 @@ func openCmd() *cli.Command {
 		Usage:     "Open a plan file in your editor",
 		ArgsUsage: "<plan-name>",
 		Action: func(c *cli.Context) error {
-			fmt.Println("not yet implemented")
-			return nil
+			slug := c.Args().First()
+			if slug == "" {
+				return fmt.Errorf("usage: etch open <plan-name>")
+			}
+			return runOpen(slug)
 		},
 	}
+}
+
+func runOpen(slug string) error {
+	rootDir, err := findProjectRoot()
+	if err != nil {
+		return err
+	}
+
+	plan, err := findPlanBySlug(rootDir, slug)
+	if err != nil {
+		return err
+	}
+
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		editor = "vi"
+	}
+
+	cmd := exec.Command(editor, plan.FilePath)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+func findPlanBySlug(rootDir, slug string) (*planMatch, error) {
+	plans, err := etchcontext.DiscoverPlans(rootDir)
+	if err != nil {
+		return nil, fmt.Errorf("no plans found")
+	}
+
+	for _, p := range plans {
+		if p.Slug == slug {
+			return &planMatch{FilePath: p.FilePath, Slug: p.Slug}, nil
+		}
+	}
+
+	// Try direct file path as fallback.
+	path := filepath.Join(rootDir, ".etch", "plans", slug+".md")
+	if _, err := os.Stat(path); err == nil {
+		return &planMatch{FilePath: path, Slug: slug}, nil
+	}
+
+	return nil, fmt.Errorf("plan not found: %s", slug)
+}
+
+type planMatch struct {
+	FilePath string
+	Slug     string
 }
