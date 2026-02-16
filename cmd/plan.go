@@ -20,6 +20,13 @@ func planCmd() *cli.Command {
 		Name:      "plan",
 		Usage:     "Generate an implementation plan",
 		ArgsUsage: "<description>",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:    "name",
+				Aliases: []string{"n"},
+				Usage:   "plan name used for the filename (e.g. auth-system)",
+			},
+		},
 		Action: func(c *cli.Context) error {
 			description := strings.Join(c.Args().Slice(), " ")
 			if description == "" {
@@ -38,8 +45,13 @@ func planCmd() *cli.Command {
 			}
 			_ = cfg // loaded for slug generation; no API key needed
 
-			// Determine slug and handle collisions.
-			slug := generator.Slugify(description)
+			// Determine slug: use --name flag if provided, otherwise derive from description.
+			var slug string
+			if name := c.String("name"); name != "" {
+				slug = generator.Slugify(name)
+			} else {
+				slug = generator.Slugify(description)
+			}
 			if generator.SlugExists(rootDir, slug) {
 				newSlug, _ := generator.ResolveSlug(rootDir, slug)
 				fmt.Printf("Plan '%s' already exists. Create '%s'? Or did you mean `etch replan %s`?\n", slug, newSlug, slug)

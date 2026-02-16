@@ -18,6 +18,10 @@ func statusCmd() *cli.Command {
 				Name:  "json",
 				Usage: "output in JSON format",
 			},
+			&cli.BoolFlag{
+				Name:  "all",
+				Usage: "show all plans including fully pending and completed",
+			},
 		},
 		Action: func(c *cli.Context) error {
 			rootDir, err := findProjectRoot()
@@ -34,6 +38,12 @@ func statusCmd() *cli.Command {
 
 			status.SortPlanStatuses(plans)
 
+			// Filter to active plans unless --all is passed or a specific plan is requested.
+			showAll := c.Bool("all") || planFilter != ""
+			if !showAll {
+				plans = status.FilterActive(plans)
+			}
+
 			if c.Bool("json") {
 				out, err := status.FormatJSON(plans)
 				if err != nil {
@@ -45,6 +55,8 @@ func statusCmd() *cli.Command {
 
 			if planFilter != "" && len(plans) == 1 {
 				fmt.Print(status.FormatDetailed(plans[0]))
+			} else if len(plans) == 0 && !showAll {
+				fmt.Println("No active plans. Use --all to see all plans.")
 			} else {
 				fmt.Print(status.FormatSummary(plans))
 			}

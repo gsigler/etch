@@ -14,7 +14,7 @@ func Execute() (bool, error) {
 	app := &cli.App{
 		Name:    "etch",
 		Usage:   "AI implementation planning CLI",
-		Version: "0.3.1",
+		Version: "0.3.2",
 		Flags: []cli.Flag{
 			&cli.BoolFlag{
 				Name:  "verbose",

@@ -18,7 +18,7 @@ func Run(prompt, workDir string) error {
 			WithHint("install Claude Code: https://docs.anthropic.com/en/docs/claude-code")
 	}
 
-	cmd := exec.Command(path, prompt)
+	cmd := exec.Command(path, "-p", prompt)
 	cmd.Dir = workDir
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
@@ -33,8 +33,8 @@ func Run(prompt, workDir string) error {
 
 // RunWithStdin launches the claude CLI interactively, piping the prompt via
 // stdin instead of passing it as a CLI argument. This avoids OS argument
-// length limits for large context prompts. stdout and stderr remain connected
-// to the user's terminal for interactive use.
+// length limits for large context prompts (equivalent to `cat file | claude`).
+// stdout and stderr remain connected to the user's terminal.
 func RunWithStdin(prompt, workDir string) error {
 	path, err := exec.LookPath("claude")
 	if err != nil {
@@ -42,7 +42,7 @@ func RunWithStdin(prompt, workDir string) error {
 			WithHint("install Claude Code: https://docs.anthropic.com/en/docs/claude-code")
 	}
 
-	cmd := exec.Command(path, "--prompt", "-")
+	cmd := exec.Command(path)
 	cmd.Dir = workDir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
