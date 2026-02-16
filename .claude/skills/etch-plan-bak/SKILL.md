@@ -28,7 +28,7 @@ Create the plan markdown file following this exact format:
 
 ### Task 1: <Title> [pending]
 **Complexity:** small | medium | large
-**Files:** src/auth.ts, src/auth.test.ts
+**Files:** file1.go, file2.go
 **Depends on:** (none for first task)
 
 <Description of what to implement and how>
@@ -52,7 +52,7 @@ Create the plan markdown file following this exact format:
 
 ### Task 1.1: <Title> [pending]
 **Complexity:** small | medium | large
-**Files:** src/models/user.py, src/routes/auth.py
+**Files:** file1.go, file2.go
 **Depends on:** (none for first task)
 
 <Description>
@@ -66,7 +66,7 @@ Create the plan markdown file following this exact format:
 
 ### Task 2.1: <Title> [pending]
 **Complexity:** small | medium | large
-**Files:** tests/test_auth.py
+**Files:** file3.go
 **Depends on:** Task 1.1
 
 <Description>
