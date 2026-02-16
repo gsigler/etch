@@ -7,22 +7,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gsigler/etch/internal/api"
 	etcherr "github.com/gsigler/etch/internal/errors"
 	"github.com/gsigler/etch/internal/models"
-	"github.com/gsigler/etch/internal/parser"
 )
 
-// RefineResult holds the output of a plan refinement.
-type RefineResult struct {
-	OldMarkdown string
-	NewMarkdown string
-	NewPlan     *models.Plan
-	BackupPath  string
-	Diff        string
-}
-
-// ExtractComments collects all 💬 review comments from a plan, grouped by task.
+// ExtractComments collects all review comments from a plan, grouped by task.
 // Returns a formatted string with task context, and the total comment count.
 func ExtractComments(plan *models.Plan) (string, int) {
 	var b strings.Builder
@@ -68,63 +57,6 @@ func BackupPlan(planPath, rootDir string) (string, error) {
 	}
 
 	return backupPath, nil
-}
-
-// Refine sends a plan with its 💬 review comments to the AI for refinement.
-// It validates the response and returns a RefineResult with the old/new markdown and diff.
-// The caller is responsible for the confirmation prompt and writing the result.
-func Refine(client APIClient, planPath, rootDir string, streamCb api.StreamCallback) (RefineResult, error) {
-	// 1. Read and parse the plan.
-	oldMarkdown, err := os.ReadFile(planPath)
-	if err != nil {
-		return RefineResult{}, etcherr.WrapIO("reading plan", err)
-	}
-
-	plan, err := parser.Parse(strings.NewReader(string(oldMarkdown)))
-	if err != nil {
-		return RefineResult{}, etcherr.WrapParse("parsing plan", err)
-	}
-
-	// 2. Extract comments.
-	comments, count := ExtractComments(plan)
-	if count == 0 {
-		return RefineResult{}, etcherr.Parse("no review comments found in plan").
-			WithHint("add comments in the TUI review mode before refining")
-	}
-
-	// 3. Backup the plan.
-	backupPath, err := BackupPlan(planPath, rootDir)
-	if err != nil {
-		return RefineResult{}, err
-	}
-
-	// 4. Build prompts and call the API.
-	systemPrompt := buildRefineSystemPrompt()
-	userMessage := buildRefineUserMessage(string(oldMarkdown), comments)
-
-	fullText, err := client.SendStream(systemPrompt, userMessage, streamCb)
-	if err != nil {
-		return RefineResult{}, etcherr.WrapAPI("refining plan", err)
-	}
-
-	// 5. Extract and validate the new plan.
-	newMarkdown := extractMarkdown(fullText)
-	newPlan, err := parser.Parse(strings.NewReader(newMarkdown))
-	if err != nil {
-		return RefineResult{}, etcherr.WrapParse("refined plan failed validation", err).
-			WithHint("the AI response may not follow the expected format — try again")
-	}
-
-	// 6. Generate diff.
-	diff := GenerateDiff(string(oldMarkdown), newMarkdown)
-
-	return RefineResult{
-		OldMarkdown: string(oldMarkdown),
-		NewMarkdown: newMarkdown,
-		NewPlan:     newPlan,
-		BackupPath:  backupPath,
-		Diff:        diff,
-	}, nil
 }
 
 // ApplyRefinement writes the refined plan to disk, overwriting the original.

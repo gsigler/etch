@@ -2,16 +2,12 @@ package generator
 
 import (
 	"fmt"
-	"os"
 	"regexp"
 	"strconv"
 	"strings"
 
-	"github.com/gsigler/etch/internal/api"
 	etcherr "github.com/gsigler/etch/internal/errors"
 	"github.com/gsigler/etch/internal/models"
-	"github.com/gsigler/etch/internal/parser"
-	"github.com/gsigler/etch/internal/progress"
 )
 
 // ReplanTarget identifies what to replan: a single task or an entire feature.
@@ -21,16 +17,6 @@ type ReplanTarget struct {
 	FeatureNum int   // e.g. 2 (for feature targets)
 	Task      *models.Task
 	Feature   *models.Feature
-}
-
-// ReplanResult holds the output of a replan operation.
-type ReplanResult struct {
-	OldMarkdown string
-	NewMarkdown string
-	NewPlan     *models.Plan
-	BackupPath  string
-	Diff        string
-	Target      ReplanTarget
 }
 
 // ResolveTarget parses a target string and resolves it against the plan.
@@ -225,87 +211,4 @@ func formatSessionHistory(sessions []models.SessionProgress) string {
 		b.WriteString("\n")
 	}
 	return b.String()
-}
-
-// Replan sends a plan with replan context to the AI for replanning.
-// It validates the response and returns a ReplanResult with the old/new markdown and diff.
-func Replan(client APIClient, planPath, rootDir string, target ReplanTarget, streamCb api.StreamCallback) (ReplanResult, error) {
-	// 1. Read the plan.
-	oldMarkdown, err := os.ReadFile(planPath)
-	if err != nil {
-		return ReplanResult{}, etcherr.WrapIO("reading plan", err)
-	}
-
-	plan, err := parser.Parse(strings.NewReader(string(oldMarkdown)))
-	if err != nil {
-		return ReplanResult{}, etcherr.WrapParse("parsing plan", err)
-	}
-
-	// 2. Read session history.
-	sessions, err := progress.ReadAll(rootDir, plan.Slug)
-	if err != nil {
-		// Non-fatal: proceed without session history.
-		sessions = make(map[string][]models.SessionProgress)
-	}
-
-	// 3. Build scope and session history.
-	scope := BuildReplanScope(target, sessions)
-	sessionHistory := buildAllSessionHistory(sessions)
-
-	// 4. Backup the plan.
-	backupPath, err := BackupPlan(planPath, rootDir)
-	if err != nil {
-		return ReplanResult{}, err
-	}
-
-	// 5. Build prompts and call the API.
-	systemPrompt := buildReplanSystemPrompt()
-	userMessage := buildReplanUserMessage(string(oldMarkdown), scope, sessionHistory)
-
-	fullText, err := client.SendStream(systemPrompt, userMessage, streamCb)
-	if err != nil {
-		return ReplanResult{}, etcherr.WrapAPI("replanning", err)
-	}
-
-	// 6. Extract and validate the new plan.
-	newMarkdown := extractMarkdown(fullText)
-	newPlan, err := parser.Parse(strings.NewReader(newMarkdown))
-	if err != nil {
-		return ReplanResult{}, etcherr.WrapParse("replanned plan failed validation", err).
-			WithHint("the AI response may not follow the expected format — try again")
-	}
-
-	// 7. Generate diff.
-	diff := GenerateDiff(string(oldMarkdown), newMarkdown)
-
-	return ReplanResult{
-		OldMarkdown: string(oldMarkdown),
-		NewMarkdown: newMarkdown,
-		NewPlan:     newPlan,
-		BackupPath:  backupPath,
-		Diff:        diff,
-		Target:      target,
-	}, nil
-}
-
-// buildAllSessionHistory formats all session history for the user message.
-func buildAllSessionHistory(sessions map[string][]models.SessionProgress) string {
-	if len(sessions) == 0 {
-		return ""
-	}
-
-	var b strings.Builder
-	for taskID, taskSessions := range sessions {
-		if len(taskSessions) == 0 {
-			continue
-		}
-		b.WriteString(fmt.Sprintf("### Task %s\n", taskID))
-		b.WriteString(formatSessionHistory(taskSessions))
-	}
-	return b.String()
-}
-
-// ApplyReplan writes the replanned plan to disk, overwriting the original.
-func ApplyReplan(planPath, newMarkdown string) error {
-	return ApplyRefinement(planPath, newMarkdown)
 }

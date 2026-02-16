@@ -1,13 +1,10 @@
 package cmd
 
 import (
-	"bufio"
 	"fmt"
 	"os"
-	"strings"
 
-	"github.com/gsigler/etch/internal/api"
-	"github.com/gsigler/etch/internal/config"
+	"github.com/gsigler/etch/internal/claude"
 	etchcontext "github.com/gsigler/etch/internal/context"
 	etcherr "github.com/gsigler/etch/internal/errors"
 	"github.com/gsigler/etch/internal/generator"
@@ -36,16 +33,6 @@ Target resolution:
 			}
 
 			rootDir, err := findProjectRoot()
-			if err != nil {
-				return err
-			}
-
-			cfg, err := config.Load(rootDir)
-			if err != nil {
-				return etcherr.WrapConfig("loading config", err)
-			}
-
-			apiKey, err := cfg.ResolveAPIKey()
 			if err != nil {
 				return err
 			}
@@ -98,57 +85,62 @@ Target resolution:
 			}
 
 			// Display what we're replanning.
+			var targetDesc string
 			switch target.Type {
 			case "task":
-				fmt.Printf("Replanning Task %s: %s\n\n", target.TaskID, target.Task.Title)
+				targetDesc = fmt.Sprintf("Task %s: %s", target.TaskID, target.Task.Title)
+				fmt.Printf("Replanning %s\n", targetDesc)
 			case "feature":
-				fmt.Printf("Replanning Feature %d: %s\n\n", target.FeatureNum, target.Feature.Title)
+				targetDesc = fmt.Sprintf("Feature %d: %s", target.FeatureNum, target.Feature.Title)
+				fmt.Printf("Replanning %s\n", targetDesc)
 			}
 
-			client := api.NewClient(apiKey, cfg.API.Model)
+			// Read the current plan content.
+			planContent, err := os.ReadFile(plan.FilePath)
+			if err != nil {
+				return etcherr.WrapIO("reading plan file", err).
+					WithHint("check that the plan file exists and is readable: " + plan.FilePath)
+			}
 
-			// Stream the replan.
-			result, err := generator.Replan(client, plan.FilePath, rootDir, target, func(text string) {
-				fmt.Print(text)
-			})
+			// Backup the plan before launching the interactive session.
+			backupPath, err := generator.BackupPlan(plan.FilePath, rootDir)
 			if err != nil {
 				return err
 			}
+			fmt.Printf("Backup saved to: %s\n\n", backupPath)
+
+			// Build the prompt for Claude Code.
+			prompt := fmt.Sprintf(
+				"I need to replan part of an etch implementation plan.\n\n"+
+					"**Target:** %s\n\n"+
+					"**Plan file:** %s\n\n"+
+					"**Current plan content:**\n```markdown\n%s\n```\n\n"+
+					"Please modify the plan file at `%s` to replan the target above. "+
+					"Preserve any completed tasks (marked with ✓) as-is. "+
+					"Update the pending/in-progress tasks for the target to reflect a better approach. "+
+					"Follow the etch plan format with proper markdown headings, task IDs, and acceptance criteria.",
+				targetDesc,
+				plan.FilePath,
+				string(planContent),
+				plan.FilePath,
+			)
+
+			fmt.Println("Launching Claude Code to replan...")
 			fmt.Println()
 
-			// Show diff.
-			if result.Diff != "" {
-				fmt.Println("\n--- Changes ---")
-				fmt.Println(result.Diff)
-			} else {
-				fmt.Println("\nNo changes detected.")
-				return nil
+			if err := claude.Run(prompt, rootDir); err != nil {
+				return err
 			}
 
-			fmt.Printf("\nBackup saved to: %s\n", result.BackupPath)
-
-			// Confirm.
-			fmt.Print("\nApply changes? (y/n): ")
-			reader := bufio.NewReader(os.Stdin)
-			input, _ := reader.ReadString('\n')
-			input = strings.TrimSpace(strings.ToLower(input))
-
-			if input != "y" && input != "yes" {
-				fmt.Println("Changes discarded. Backup remains at:", result.BackupPath)
-				return nil
-			}
-
-			if err := generator.ApplyReplan(plan.FilePath, result.NewMarkdown); err != nil {
-				return etcherr.WrapIO("applying replan", err)
-			}
-
-			// Verify the written plan parses correctly.
+			// Verify the plan file still parses correctly.
 			if _, err := parser.ParseFile(plan.FilePath); err != nil {
-				fmt.Printf("Warning: written plan has parse issues: %v\n", err)
+				fmt.Printf("\nWarning: plan has parse issues after replanning: %v\n", err)
 				fmt.Println("You may want to review the file manually or restore from backup.")
+				fmt.Printf("Backup: %s\n", backupPath)
+			} else {
+				fmt.Println("\nPlan updated successfully.")
 			}
 
-			fmt.Println("Plan updated successfully.")
 			return nil
 		},
 	}
