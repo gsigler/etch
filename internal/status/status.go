@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -17,10 +18,35 @@ import (
 
 // PlanStatus holds the reconciled status for a single plan.
 type PlanStatus struct {
-	Title    string          `json:"title"`
-	Slug     string          `json:"slug"`
-	FilePath string          `json:"file_path"`
-	Features []FeatureStatus `json:"features"`
+	Title          string          `json:"title"`
+	Slug           string          `json:"slug"`
+	FilePath       string          `json:"file_path"`
+	Features       []FeatureStatus `json:"features"`
+	CompletedTasks int             `json:"completed_tasks"`
+	TotalTasks     int             `json:"total_tasks"`
+}
+
+// IsActive returns true if the plan has at least one in-progress, failed, or blocked task,
+// or is partially completed (some but not all tasks done). Fully pending and fully completed
+// plans are not considered active.
+func (ps PlanStatus) IsActive() bool {
+	for _, f := range ps.Features {
+		for _, t := range f.Tasks {
+			if t.Status == models.StatusInProgress || t.Status == models.StatusFailed || t.Status == models.StatusBlocked {
+				return true
+			}
+		}
+	}
+	// Partially completed: some done but not all.
+	return ps.CompletedTasks > 0 && ps.CompletedTasks < ps.TotalTasks
+}
+
+// Percentage returns the overall completion percentage for the plan.
+func (ps PlanStatus) Percentage() int {
+	if ps.TotalTasks == 0 {
+		return 0
+	}
+	return ps.CompletedTasks * 100 / ps.TotalTasks
 }
 
 // FeatureStatus holds status summary for a feature.
@@ -37,6 +63,8 @@ type TaskStatus struct {
 	ID            string             `json:"id"`
 	Title         string             `json:"title"`
 	Status        models.Status      `json:"status"`
+	DependsOn     []string           `json:"depends_on,omitempty"`
+	IsBlocked     bool               `json:"is_blocked,omitempty"`
 	SessionCount  int                `json:"session_count"`
 	LastOutcome   string             `json:"last_outcome,omitempty"`
 	Criteria      []models.Criterion `json:"criteria,omitempty"`
@@ -116,6 +144,7 @@ func reconcile(plan *models.Plan, progressMap map[string][]models.SessionProgres
 				ID:           task.FullID(),
 				Title:        task.Title,
 				Status:       task.Status,
+				DependsOn:    task.DependsOn,
 				SessionCount: len(sessions),
 				Criteria:     task.Criteria,
 			}
@@ -167,8 +196,76 @@ func reconcile(plan *models.Plan, progressMap map[string][]models.SessionProgres
 		ps.Features = append(ps.Features, fs)
 	}
 
+	// Aggregate plan-level totals from features.
+	for _, f := range ps.Features {
+		ps.CompletedTasks += f.CompletedTasks
+		ps.TotalTasks += f.TotalTasks
+	}
+
+	// Resolve blocked status: a pending task is blocked if any dependency is not completed.
+	resolveBlocked(&ps)
+
 	_ = changed // tracking for potential future use
 	return ps, nil
+}
+
+// depIDRegex extracts a task ID like "1.2" or "1.3b" from a dependency string like "Task 1.2".
+var depIDRegex = regexp.MustCompile(`(\d+\.\d+[a-z]?)`)
+
+// depBareIDRegex extracts a bare task number like "2" from a dependency string like "Task 2".
+var depBareIDRegex = regexp.MustCompile(`(?:^|\D)(\d+[a-z]?)(?:\D|$)`)
+
+// resolveBlocked marks pending tasks as blocked if any of their dependencies are not completed.
+func resolveBlocked(ps *PlanStatus) {
+	// Build a map of task ID -> status for quick lookup.
+	statusMap := make(map[string]models.Status)
+	for _, f := range ps.Features {
+		for _, t := range f.Tasks {
+			statusMap[t.ID] = t.Status
+		}
+	}
+
+	// Detect single-feature plan: all tasks have feature number 1.
+	singleFeature := len(ps.Features) == 1
+
+	for i := range ps.Features {
+		for j := range ps.Features[i].Tasks {
+			t := &ps.Features[i].Tasks[j]
+			if t.Status != models.StatusPending || len(t.DependsOn) == 0 {
+				continue
+			}
+			for _, dep := range t.DependsOn {
+				depID := extractDepID(dep)
+				// For single-feature plans, deps may be bare numbers like "Task 2".
+				if depID == "" && singleFeature {
+					depID = extractBareDepID(dep)
+				}
+				if depID == "" {
+					continue
+				}
+				if s, ok := statusMap[depID]; ok && s != models.StatusCompleted {
+					t.IsBlocked = true
+					break
+				}
+			}
+		}
+	}
+}
+
+// extractDepID pulls a task ID from a dependency string like "Task 1.2".
+func extractDepID(dep string) string {
+	m := depIDRegex.FindString(dep)
+	return m
+}
+
+// extractBareDepID pulls a bare task number from a dependency string like "Task 2"
+// and normalizes it to "1.N" format for single-feature plan lookup.
+func extractBareDepID(dep string) string {
+	m := depBareIDRegex.FindStringSubmatch(dep)
+	if m == nil {
+		return ""
+	}
+	return "1." + m[1]
 }
 
 // mapProgressStatus converts a progress file status string to a plan Status.
@@ -187,6 +284,31 @@ func mapProgressStatus(progressStatus string) models.Status {
 	}
 }
 
+// FilterActive returns only plans that are active (have in-progress, failed,
+// or blocked tasks, or are partially completed).
+func FilterActive(plans []PlanStatus) []PlanStatus {
+	var active []PlanStatus
+	for _, p := range plans {
+		if p.IsActive() {
+			active = append(active, p)
+		}
+	}
+	return active
+}
+
+// progressBar returns a 10-character progress bar string like [████░░░░░░] 45%.
+func progressBar(pct int) string {
+	filled := pct / 10
+	if filled > 10 {
+		filled = 10
+	}
+	empty := 10 - filled
+	return fmt.Sprintf("[%s%s] %d%%",
+		strings.Repeat("█", filled),
+		strings.Repeat("░", empty),
+		pct)
+}
+
 // FormatSummary renders all plan statuses as a summary view.
 func FormatSummary(plans []PlanStatus) string {
 	if len(plans) == 0 {
@@ -196,16 +318,20 @@ func FormatSummary(plans []PlanStatus) string {
 	var b strings.Builder
 	for i, p := range plans {
 		if i > 0 {
-			b.WriteString("\n")
+			b.WriteString("\n────────────────────────────────────────\n\n")
 		}
-		b.WriteString(fmt.Sprintf("📋 %s\n", p.Title))
+		pct := p.Percentage()
+		b.WriteString(fmt.Sprintf("📋 %s  %s\n", p.Title, progressBar(pct)))
+		b.WriteString(fmt.Sprintf("  slug: %s\n", p.Slug))
+
 		for _, f := range p.Features {
 			icon := featureIcon(f)
 			b.WriteString(fmt.Sprintf("   %s Feature %d: %s [%d/%d tasks]\n",
 				icon, f.Number, f.Title, f.CompletedTasks, f.TotalTasks))
 
 			for _, t := range f.Tasks {
-				line := fmt.Sprintf("     %s %s: %s", t.Status.Icon(), t.ID, t.Title)
+				icon := taskIcon(t)
+				line := fmt.Sprintf("      %s %-6s %s", icon, t.ID, t.Title)
 				if t.SessionCount > 0 && t.Status != models.StatusCompleted {
 					line += fmt.Sprintf(" (%d sessions, last: %s)", t.SessionCount, t.LastOutcome)
 				}
@@ -219,7 +345,9 @@ func FormatSummary(plans []PlanStatus) string {
 // FormatDetailed renders a single plan with criteria and session notes.
 func FormatDetailed(ps PlanStatus) string {
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("📋 %s\n\n", ps.Title))
+	pct := ps.Percentage()
+	b.WriteString(fmt.Sprintf("📋 %s  %s\n", ps.Title, progressBar(pct)))
+	b.WriteString(fmt.Sprintf("  slug: %s\n\n", ps.Slug))
 
 	for _, f := range ps.Features {
 		icon := featureIcon(f)
@@ -227,11 +355,16 @@ func FormatDetailed(ps PlanStatus) string {
 			icon, f.Number, f.Title, f.CompletedTasks, f.TotalTasks))
 
 		for _, t := range f.Tasks {
-			b.WriteString(fmt.Sprintf("\n  %s %s: %s", t.Status.Icon(), t.ID, t.Title))
+			icon := taskIcon(t)
+			b.WriteString(fmt.Sprintf("\n  %s %-6s %s", icon, t.ID, t.Title))
 			if t.SessionCount > 0 {
 				b.WriteString(fmt.Sprintf(" (%d sessions, last: %s)", t.SessionCount, t.LastOutcome))
 			}
 			b.WriteString("\n")
+
+			if t.IsBlocked && len(t.DependsOn) > 0 {
+				b.WriteString(fmt.Sprintf("    Waiting on: %s\n", strings.Join(t.DependsOn, ", ")))
+			}
 
 			if len(t.Criteria) > 0 {
 				for _, c := range t.Criteria {
@@ -279,6 +412,14 @@ func featureIcon(f FeatureStatus) string {
 		}
 	}
 	return models.StatusPending.Icon()
+}
+
+// taskIcon returns the display icon for a task, showing ⊘ for blocked pending tasks.
+func taskIcon(t TaskStatus) string {
+	if t.IsBlocked {
+		return models.StatusBlocked.Icon()
+	}
+	return t.Status.Icon()
 }
 
 // SortPlanStatuses sorts plans alphabetically by title for consistent output.

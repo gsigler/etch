@@ -132,10 +132,18 @@ func UpdateTaskStatus(path string, taskID string, newStatus models.Status) error
 	lines := strings.Split(string(data), "\n")
 	found := false
 
-	taskPattern := "### Task " + taskID + ":"
+	taskPatterns := TaskIDPatterns(taskID)
 
 	for i, line := range lines {
-		if !strings.HasPrefix(strings.TrimSpace(line), taskPattern) {
+		trimmed := strings.TrimSpace(line)
+		matched := false
+		for _, pat := range taskPatterns {
+			if strings.HasPrefix(trimmed, pat) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
 			continue
 		}
 		if m := taskLineRe.FindStringSubmatchIndex(line); m != nil {
@@ -163,16 +171,23 @@ func UpdateCriterion(path string, taskID string, criterionText string, met bool)
 
 	lines := strings.Split(string(data), "\n")
 
-	taskPattern := "### Task " + taskID + ":"
+	taskPatterns := TaskIDPatterns(taskID)
 	inTask := false
 	found := false
 
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
 
-		if strings.HasPrefix(trimmed, taskPattern) {
-			inTask = true
-			continue
+		if !inTask {
+			for _, pat := range taskPatterns {
+				if strings.HasPrefix(trimmed, pat) {
+					inTask = true
+					break
+				}
+			}
+			if inTask {
+				continue
+			}
 		}
 
 		if inTask && (strings.HasPrefix(trimmed, "### ") || strings.HasPrefix(trimmed, "## ")) {
@@ -202,4 +217,16 @@ func UpdateCriterion(path string, taskID string, criterionText string, met bool)
 	}
 
 	return os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0644)
+}
+
+// TaskIDPatterns returns the heading prefixes to match for a given task ID.
+// For IDs like "1.2" (feature 1), it returns both "### Task 1.2:" (multi-feature)
+// and "### Task 2:" (single-feature), since single-feature plans omit the feature number.
+func TaskIDPatterns(taskID string) []string {
+	patterns := []string{"### Task " + taskID + ":"}
+	if strings.HasPrefix(taskID, "1.") {
+		short := strings.TrimPrefix(taskID, "1.")
+		patterns = append(patterns, "### Task "+short+":")
+	}
+	return patterns
 }

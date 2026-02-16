@@ -5,6 +5,8 @@ import (
 	"os"
 	"regexp"
 	"strings"
+
+	"github.com/gsigler/etch/internal/serializer"
 )
 
 var planCommentRe = regexp.MustCompile(`^>\s*💬\s*(.+)$`)
@@ -20,7 +22,7 @@ func AddComment(path string, taskID string, comment string) error {
 	}
 
 	lines := strings.Split(string(data), "\n")
-	taskPattern := "### Task " + taskID + ":"
+	taskPatterns := serializer.TaskIDPatterns(taskID)
 
 	// Find the task, then find the insertion point: just before the next
 	// heading or at end of task section.
@@ -30,9 +32,16 @@ func AddComment(path string, taskID string, comment string) error {
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
 
-		if strings.HasPrefix(trimmed, taskPattern) {
-			inTask = true
-			continue
+		if !inTask {
+			for _, pat := range taskPatterns {
+				if strings.HasPrefix(trimmed, pat) {
+					inTask = true
+					break
+				}
+			}
+			if inTask {
+				continue
+			}
 		}
 
 		if inTask {
@@ -74,7 +83,7 @@ func DeleteComment(path string, taskID string, commentText string) error {
 	}
 
 	lines := strings.Split(string(data), "\n")
-	taskPattern := "### Task " + taskID + ":"
+	taskPatterns := serializer.TaskIDPatterns(taskID)
 
 	inTask := false
 	deleteStart := -1
@@ -83,9 +92,16 @@ func DeleteComment(path string, taskID string, commentText string) error {
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
 
-		if strings.HasPrefix(trimmed, taskPattern) {
-			inTask = true
-			continue
+		if !inTask {
+			for _, pat := range taskPatterns {
+				if strings.HasPrefix(trimmed, pat) {
+					inTask = true
+					break
+				}
+			}
+			if inTask {
+				continue
+			}
 		}
 
 		if inTask && (strings.HasPrefix(trimmed, "### ") || strings.HasPrefix(trimmed, "## ")) {
