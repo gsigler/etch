@@ -69,8 +69,8 @@ func TestRunInitCreatesConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected config.toml to exist: %v", err)
 	}
-	if !strings.Contains(string(data), "[ai]") {
-		t.Error("config.toml missing [ai] section")
+	if !strings.Contains(string(data), "[api]") {
+		t.Error("config.toml missing [api] section")
 	}
 }
 

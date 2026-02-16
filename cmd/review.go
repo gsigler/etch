@@ -5,6 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	etchcontext "github.com/gsigler/etch/internal/context"
+	etcherr "github.com/gsigler/etch/internal/errors"
 	"github.com/gsigler/etch/internal/tui"
 	"github.com/urfave/cli/v2"
 )
@@ -26,7 +27,8 @@ func reviewCmd() *cli.Command {
 			}
 
 			if len(plans) == 0 {
-				return fmt.Errorf("no plans found in .etch/plans/")
+				return etcherr.Project("no plans found").
+					WithHint("run 'etch plan <description>' to create one")
 			}
 
 			// Resolve which plan to review.
@@ -41,7 +43,8 @@ func reviewCmd() *cli.Command {
 					}
 				}
 				if !found {
-					return fmt.Errorf("plan not found: %s", slug)
+					return etcherr.Project(fmt.Sprintf("plan not found: %s", slug)).
+						WithHint("run 'etch list' to see available plans")
 				}
 			} else if len(plans) > 1 {
 				slug, err := pickPlan(plans)
@@ -59,7 +62,7 @@ func reviewCmd() *cli.Command {
 			m := tui.New(plan, plan.FilePath)
 			p := tea.NewProgram(m, tea.WithAltScreen())
 			if _, err := p.Run(); err != nil {
-				return fmt.Errorf("TUI error: %w", err)
+				return etcherr.WrapIO("TUI error", err)
 			}
 			return nil
 		},

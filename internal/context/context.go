@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	etcherr "github.com/gsigler/etch/internal/errors"
 	"github.com/gsigler/etch/internal/models"
 	"github.com/gsigler/etch/internal/parser"
 	"github.com/gsigler/etch/internal/progress"
@@ -30,10 +31,11 @@ func DiscoverPlans(rootDir string) ([]*models.Plan, error) {
 	pattern := filepath.Join(dir, "*.md")
 	matches, err := filepath.Glob(pattern)
 	if err != nil {
-		return nil, fmt.Errorf("globbing plans: %w", err)
+		return nil, etcherr.WrapIO("globbing plans", err)
 	}
 	if len(matches) == 0 {
-		return nil, fmt.Errorf("no plan files found in %s", dir)
+		return nil, etcherr.Project("no plan files found").
+			WithHint("run 'etch plan <description>' to create one")
 	}
 
 	var plans []*models.Plan
@@ -45,7 +47,8 @@ func DiscoverPlans(rootDir string) ([]*models.Plan, error) {
 		plans = append(plans, plan)
 	}
 	if len(plans) == 0 {
-		return nil, fmt.Errorf("no valid plan files found in %s", dir)
+		return nil, etcherr.Project("no valid plan files found").
+			WithHint("check that plan files in .etch/plans/ follow the expected markdown format")
 	}
 	return plans, nil
 }
@@ -66,7 +69,8 @@ func ResolveTask(plans []*models.Plan, planSlug, taskID string, rootDir string) 
 			}
 		}
 		if len(candidates) == 0 {
-			return nil, nil, fmt.Errorf("no plan found with slug %q", planSlug)
+			return nil, nil, etcherr.Project(fmt.Sprintf("no plan found with slug %q", planSlug)).
+				WithHint("run 'etch list' to see available plans")
 		}
 	} else {
 		candidates = plans
@@ -85,7 +89,8 @@ func ResolveTask(plans []*models.Plan, planSlug, taskID string, rootDir string) 
 		}
 	}
 
-	return nil, nil, fmt.Errorf("task %q not found", taskID)
+	return nil, nil, etcherr.Project(fmt.Sprintf("task %q not found", taskID)).
+		WithHint("run 'etch status' to see available tasks")
 }
 
 // resolveTaskID resolves a task ID within a plan.
@@ -132,7 +137,8 @@ func autoSelectTask(plans []*models.Plan, rootDir string) (*models.Plan, *models
 	}
 
 	if len(candidates) == 0 {
-		return nil, nil, fmt.Errorf("no pending tasks with satisfied dependencies")
+		return nil, nil, etcherr.Project("no pending tasks with satisfied dependencies").
+			WithHint("all tasks may be completed or blocked — run 'etch status' to check")
 	}
 
 	// If only one candidate or all from same plan, return first.
@@ -223,7 +229,7 @@ func Assemble(rootDir string, plan *models.Plan, task *models.Task) (Result, err
 	// Create session progress file.
 	progressPath, err := progress.WriteSession(rootDir, plan, task)
 	if err != nil {
-		return Result{}, fmt.Errorf("creating progress file: %w", err)
+		return Result{}, etcherr.WrapIO("creating progress file", err)
 	}
 
 	// Determine session number from filename.
@@ -235,13 +241,13 @@ func Assemble(rootDir string, plan *models.Plan, task *models.Task) (Result, err
 	// Write context file.
 	ctxDir := filepath.Join(rootDir, contextDir)
 	if err := os.MkdirAll(ctxDir, 0o755); err != nil {
-		return Result{}, fmt.Errorf("creating context dir: %w", err)
+		return Result{}, etcherr.WrapIO("creating context dir", err)
 	}
 
 	ctxFilename := fmt.Sprintf("%s--task-%s--%03d.md", plan.Slug, task.FullID(), sessionNum)
 	ctxPath := filepath.Join(ctxDir, ctxFilename)
 	if err := os.WriteFile(ctxPath, []byte(content), 0o644); err != nil {
-		return Result{}, fmt.Errorf("writing context file: %w", err)
+		return Result{}, etcherr.WrapIO("writing context file", err)
 	}
 
 	tokenEstimate := len(content) * 10 / 35 // chars / 3.5

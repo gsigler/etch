@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	etcherr "github.com/gsigler/etch/internal/errors"
 	"github.com/urfave/cli/v2"
 )
 
@@ -32,14 +33,15 @@ func runInit() error {
 
 	for _, d := range dirs {
 		if err := os.MkdirAll(d, 0o755); err != nil {
-			return fmt.Errorf("creating directory %s: %w", d, err)
+			return etcherr.WrapIO(fmt.Sprintf("creating directory %s", d), err).
+				WithHint("check file permissions in the current directory")
 		}
 	}
 
 	configPath := filepath.Join(root, "config.toml")
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		if err := os.WriteFile(configPath, []byte(defaultConfig), 0o644); err != nil {
-			return fmt.Errorf("writing config: %w", err)
+			return etcherr.WrapIO("writing config", err)
 		}
 	}
 
@@ -58,15 +60,16 @@ func runInit() error {
 	)
 
 	if err := appendGitignore(ignoreLines); err != nil {
-		return fmt.Errorf("updating .gitignore: %w", err)
+		return etcherr.WrapIO("updating .gitignore", err)
 	}
 
-	fmt.Println("Initialized etch project.")
+	fmt.Println("✓ Etch initialized!")
 	fmt.Println()
-	fmt.Println("Quickstart:")
-	fmt.Println("  etch plan <description>   Generate an implementation plan")
-	fmt.Println("  etch review <plan>        Review a plan interactively")
-	fmt.Println("  etch status               Show current progress")
+	fmt.Println("Next steps:")
+	fmt.Println("  etch plan \"describe your feature\"    Generate an implementation plan")
+	fmt.Println("  etch review <plan>                   Review and refine with AI")
+	fmt.Println("  etch context <task>                  Generate context prompt file for a task")
+	fmt.Println("  etch status                          Check progress across all plans")
 
 	return nil
 }
@@ -126,17 +129,11 @@ const defaultConfig = `# Etch configuration
 # See https://github.com/gsigler/etch for documentation
 
 # AI provider settings
-[ai]
-# provider = "anthropic"
-# model = "claude-sonnet-4-5-20250929"
+[api]
+# model = "claude-sonnet-4-20250514"
+# api_key = ""  # or set ANTHROPIC_API_KEY env var
 
 # Plan defaults
-[plan]
-# max_features = 10
-# max_tasks_per_feature = 10
-
-# Context generation
-[context]
-# include_progress = true
-# include_plan = true
+[defaults]
+# complexity_guide = "small = single focused session, medium = may need iteration, large = multiple sessions likely"
 `

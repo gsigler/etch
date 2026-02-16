@@ -2,8 +2,8 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 
+	etcherr "github.com/gsigler/etch/internal/errors"
 	"github.com/gsigler/etch/internal/status"
 	"github.com/urfave/cli/v2"
 )
@@ -20,9 +20,9 @@ func statusCmd() *cli.Command {
 			},
 		},
 		Action: func(c *cli.Context) error {
-			rootDir, err := os.Getwd()
+			rootDir, err := findProjectRoot()
 			if err != nil {
-				return fmt.Errorf("getting working directory: %w", err)
+				return err
 			}
 
 			planFilter := c.Args().First()
@@ -37,7 +37,7 @@ func statusCmd() *cli.Command {
 			if c.Bool("json") {
 				out, err := status.FormatJSON(plans)
 				if err != nil {
-					return fmt.Errorf("formatting JSON: %w", err)
+					return etcherr.WrapIO("formatting JSON output", err)
 				}
 				fmt.Println(out)
 				return nil

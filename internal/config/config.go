@@ -1,11 +1,11 @@
 package config
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/BurntSushi/toml"
+	etcherr "github.com/gsigler/etch/internal/errors"
 )
 
 const (
@@ -54,7 +54,8 @@ func Load(projectRoot string) (Config, error) {
 	}
 
 	if _, err := toml.DecodeFile(path, &cfg); err != nil {
-		return Config{}, fmt.Errorf("reading config %s: %w", path, err)
+		return Config{}, etcherr.WrapConfig("reading config file", err).
+			WithHint("check the syntax of " + path)
 	}
 
 	// Apply defaults for fields not set in the file.
@@ -79,8 +80,6 @@ func (c Config) ResolveAPIKey() (string, error) {
 	if c.API.APIKey != "" {
 		return c.API.APIKey, nil
 	}
-	return "", fmt.Errorf(
-		"no API key found. Set the %s environment variable or add api_key under [api] in %s",
-		envKeyName, configPath,
-	)
+	return "", etcherr.Config("no API key found").
+		WithHint("set the " + envKeyName + " environment variable or add api_key under [api] in " + configPath)
 }

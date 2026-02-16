@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	etcherr "github.com/gsigler/etch/internal/errors"
 	"github.com/urfave/cli/v2"
 )
 
@@ -23,7 +24,8 @@ func deleteCmd() *cli.Command {
 		Action: func(c *cli.Context) error {
 			slug := c.Args().First()
 			if slug == "" {
-				return fmt.Errorf("usage: etch delete <plan-name>")
+				return etcherr.Usage("missing plan name").
+					WithHint("usage: etch delete <plan-name>")
 			}
 			return runDelete(slug, c.Bool("yes"))
 		},
@@ -38,7 +40,8 @@ func runDelete(slug string, skipConfirm bool) error {
 
 	planPath := filepath.Join(rootDir, ".etch", "plans", slug+".md")
 	if _, err := os.Stat(planPath); os.IsNotExist(err) {
-		return fmt.Errorf("plan not found: %s", slug)
+		return etcherr.Project(fmt.Sprintf("plan not found: %s", slug)).
+			WithHint("run 'etch list' to see available plans")
 	}
 
 	// Find matching progress files.
@@ -69,7 +72,7 @@ func runDelete(slug string, skipConfirm bool) error {
 
 	// Remove plan file.
 	if err := os.Remove(planPath); err != nil {
-		return fmt.Errorf("removing plan file: %w", err)
+		return etcherr.WrapIO("removing plan file", err)
 	}
 
 	// Remove progress files.

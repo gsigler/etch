@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	etcherr "github.com/gsigler/etch/internal/errors"
 	"github.com/gsigler/etch/internal/models"
 	"github.com/gsigler/etch/internal/parser"
 	"github.com/gsigler/etch/internal/progress"
@@ -52,7 +53,7 @@ func Run(rootDir string, planFilter string) ([]PlanStatus, error) {
 		if os.IsNotExist(err) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("reading plans directory: %w", err)
+		return nil, etcherr.WrapIO("reading plans directory", err)
 	}
 
 	var results []PlanStatus
@@ -70,17 +71,17 @@ func Run(rootDir string, planFilter string) ([]PlanStatus, error) {
 		planPath := filepath.Join(plansDir, entry.Name())
 		plan, err := parser.ParseFile(planPath)
 		if err != nil {
-			return nil, fmt.Errorf("parsing plan %s: %w", entry.Name(), err)
+			return nil, etcherr.WrapParse(fmt.Sprintf("parsing plan %s", entry.Name()), err)
 		}
 
 		progressMap, err := progress.ReadAll(rootDir, plan.Slug)
 		if err != nil {
-			return nil, fmt.Errorf("reading progress for %s: %w", plan.Slug, err)
+			return nil, etcherr.WrapIO(fmt.Sprintf("reading progress for %s", plan.Slug), err)
 		}
 
 		ps, err := reconcile(plan, progressMap)
 		if err != nil {
-			return nil, fmt.Errorf("reconciling %s: %w", plan.Slug, err)
+			return nil, etcherr.WrapIO(fmt.Sprintf("reconciling %s", plan.Slug), err)
 		}
 
 		results = append(results, ps)
@@ -126,7 +127,7 @@ func reconcile(plan *models.Plan, progressMap map[string][]models.SessionProgres
 				if newStatus != task.Status {
 					ts.Status = newStatus
 					if err := serializer.UpdateTaskStatus(plan.FilePath, task.FullID(), newStatus); err != nil {
-						return ps, fmt.Errorf("updating task %s status: %w", task.FullID(), err)
+						return ps, etcherr.WrapIO(fmt.Sprintf("updating task %s status", task.FullID()), err)
 					}
 					task.Status = newStatus
 					changed = true
@@ -145,7 +146,7 @@ func reconcile(plan *models.Plan, progressMap map[string][]models.SessionProgres
 								task.Criteria[k].IsMet = true
 								ts.Criteria = task.Criteria
 								if err := serializer.UpdateCriterion(plan.FilePath, task.FullID(), cu.Description, true); err != nil {
-									return ps, fmt.Errorf("updating criterion for task %s: %w", task.FullID(), err)
+									return ps, etcherr.WrapIO(fmt.Sprintf("updating criterion for task %s", task.FullID()), err)
 								}
 								changed = true
 							}

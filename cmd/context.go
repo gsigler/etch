@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	etchcontext "github.com/gsigler/etch/internal/context"
+	etcherr "github.com/gsigler/etch/internal/errors"
 	"github.com/gsigler/etch/internal/models"
 	"github.com/urfave/cli/v2"
 )
@@ -62,7 +63,8 @@ func runContext(c *cli.Context) error {
 		planSlug = args[0]
 		taskID = args[1]
 	default:
-		return fmt.Errorf("usage: etch context [plan-name] [task-id]")
+		return etcherr.Usage("too many arguments").
+			WithHint("usage: etch context [plan-name] [task-id]")
 	}
 
 	plan, task, err := etchcontext.ResolveTask(plans, planSlug, taskID, rootDir)
@@ -99,7 +101,7 @@ func runContext(c *cli.Context) error {
 func findProjectRoot() (string, error) {
 	dir, err := os.Getwd()
 	if err != nil {
-		return "", fmt.Errorf("getting working directory: %w", err)
+		return "", etcherr.WrapIO("getting working directory", err)
 	}
 	for {
 		if _, err := os.Stat(filepath.Join(dir, ".etch")); err == nil {
@@ -107,7 +109,8 @@ func findProjectRoot() (string, error) {
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return "", fmt.Errorf("not an etch project (no .etch directory found)")
+			return "", etcherr.Project("not an etch project").
+				WithHint("run 'etch init' to initialize a project in this directory")
 		}
 		dir = parent
 	}
@@ -145,7 +148,8 @@ func pickPlan(plans []*models.Plan) (string, error) {
 
 	var choice int
 	if _, err := fmt.Sscanf(answer, "%d", &choice); err != nil || choice < 1 || choice > len(plans) {
-		return "", fmt.Errorf("invalid choice: %s", answer)
+		return "", etcherr.Usage(fmt.Sprintf("invalid choice: %s", answer)).
+			WithHint(fmt.Sprintf("enter a number between 1 and %d", len(plans)))
 	}
 	return plans[choice-1].Slug, nil
 }

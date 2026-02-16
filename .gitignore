@@ -1,4 +1,5 @@
-.etch/
+# Etch binary
+/etch
 
 # Go
 *.exe

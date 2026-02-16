@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	etchcontext "github.com/gsigler/etch/internal/context"
+	etcherr "github.com/gsigler/etch/internal/errors"
 	"github.com/gsigler/etch/internal/models"
 	"github.com/urfave/cli/v2"
 )
@@ -26,7 +27,8 @@ func runList() error {
 
 	plans, err := etchcontext.DiscoverPlans(rootDir)
 	if err != nil {
-		return fmt.Errorf("no plans found")
+		return etcherr.Project("no plans found").
+			WithHint("run 'etch plan <description>' to create one")
 	}
 
 	for _, plan := range plans {

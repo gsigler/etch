@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	etchcontext "github.com/gsigler/etch/internal/context"
+	etcherr "github.com/gsigler/etch/internal/errors"
 	"github.com/urfave/cli/v2"
 )
 
@@ -18,7 +19,8 @@ func openCmd() *cli.Command {
 		Action: func(c *cli.Context) error {
 			slug := c.Args().First()
 			if slug == "" {
-				return fmt.Errorf("usage: etch open <plan-name>")
+				return etcherr.Usage("missing plan name").
+					WithHint("usage: etch open <plan-name>")
 			}
 			return runOpen(slug)
 		},
@@ -51,7 +53,8 @@ func runOpen(slug string) error {
 func findPlanBySlug(rootDir, slug string) (*planMatch, error) {
 	plans, err := etchcontext.DiscoverPlans(rootDir)
 	if err != nil {
-		return nil, fmt.Errorf("no plans found")
+		return nil, etcherr.Project("no plans found").
+			WithHint("run 'etch plan <description>' to create one")
 	}
 
 	for _, p := range plans {
@@ -66,7 +69,8 @@ func findPlanBySlug(rootDir, slug string) (*planMatch, error) {
 		return &planMatch{FilePath: path, Slug: slug}, nil
 	}
 
-	return nil, fmt.Errorf("plan not found: %s", slug)
+	return nil, etcherr.Project(fmt.Sprintf("plan not found: %s", slug)).
+		WithHint("run 'etch list' to see available plans")
 }
 
 type planMatch struct {

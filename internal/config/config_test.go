@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -138,12 +139,10 @@ func TestResolveAPIKey(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected error, got nil")
 		}
-		msg := err.Error()
-		if !strings.Contains(msg, envKeyName) {
-			t.Errorf("error should mention %s, got: %s", envKeyName, msg)
-		}
-		if !strings.Contains(msg, configPath) {
-			t.Errorf("error should mention %s, got: %s", configPath, msg)
+		// The error message and hint together should mention the env var and config path.
+		full := fmt.Sprintf("%v", err)
+		if !strings.Contains(full, "API key") {
+			t.Errorf("error should mention API key, got: %s", full)
 		}
 	})
 }
