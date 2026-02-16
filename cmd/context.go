@@ -24,15 +24,24 @@ func contextCmd() *cli.Command {
 	}
 }
 
-func runContext(c *cli.Context) error {
+// resolvedContext holds the results of argument resolution and context assembly.
+type resolvedContext struct {
+	RootDir string
+	Task    *models.Task
+	Result  etchcontext.Result
+}
+
+// resolveContextArgs parses CLI arguments, resolves the plan and task, and
+// assembles the context. Shared between `etch context` and `etch run`.
+func resolveContextArgs(c *cli.Context, cmdName string) (*resolvedContext, error) {
 	rootDir, err := findProjectRoot()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	plans, err := etchcontext.DiscoverPlans(rootDir)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	var planSlug, taskID string
@@ -46,7 +55,7 @@ func runContext(c *cli.Context) error {
 			if needsPicker {
 				slug, err := pickPlan(ambiguousPlans)
 				if err != nil {
-					return err
+					return nil, err
 				}
 				planSlug = slug
 			}
@@ -63,19 +72,32 @@ func runContext(c *cli.Context) error {
 		planSlug = args[0]
 		taskID = args[1]
 	default:
-		return etcherr.Usage("too many arguments").
-			WithHint("usage: etch context [plan-name] [task-id]")
+		return nil, etcherr.Usage("too many arguments").
+			WithHint(fmt.Sprintf("usage: etch %s [plan-name] [task-id]", cmdName))
 	}
 
 	plan, task, err := etchcontext.ResolveTask(plans, planSlug, taskID, rootDir)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	result, err := etchcontext.Assemble(rootDir, plan, task)
 	if err != nil {
+		return nil, err
+	}
+
+	return &resolvedContext{RootDir: rootDir, Task: task, Result: result}, nil
+}
+
+func runContext(c *cli.Context) error {
+	rc, err := resolveContextArgs(c, "context")
+	if err != nil {
 		return err
 	}
+
+	task := rc.Task
+	result := rc.Result
+	rootDir := rc.RootDir
 
 	// Print confirmation.
 	relContext, _ := filepath.Rel(rootDir, result.ContextPath)

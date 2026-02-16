@@ -9,9 +9,14 @@ When a feature takes multiple AI coding sessions to complete, you lose context b
 - **Plans are markdown** — readable, diffable, version-controlled
 - **Progress is separate** — per-session files let multiple agents work simultaneously without conflicts
 - **Context is generated** — pipe a task's full context (plan state, dependencies, prior session notes) directly into your AI agent
+- **Claude Code integration** — generate plans and launch agents directly through Claude Code
 - **No database** — everything lives in `.etch/` as files
 
 ## Installation
+
+### Prerequisites
+
+Etch requires [Claude Code](https://docs.anthropic.com/en/docs/claude-code) to be installed and authenticated. Claude Code handles all AI interactions — plan generation, replanning, and task execution.
 
 ### From GitHub Releases
 
@@ -44,18 +49,13 @@ etch init
 
 This creates the `.etch/` directory structure and a config file.
 
-### 2. Set your API key
+### 2. Install the Claude Code skill
 
 ```bash
-export ANTHROPIC_API_KEY="sk-ant-..."
+etch skill install
 ```
 
-Or add it to `.etch/config.toml`:
-
-```toml
-[api]
-api_key = "sk-ant-..."
-```
+This installs the `etch-plan` skill into your project's `.claude/skills/` directory, enabling Claude Code to generate and modify plans in the correct format.
 
 ### 3. Generate a plan
 
@@ -63,7 +63,7 @@ api_key = "sk-ant-..."
 etch plan "Add user authentication with JWT tokens"
 ```
 
-Etch gathers project context (file tree, config files, existing plans), sends it to Claude, and writes a structured plan to `.etch/plans/`.
+Etch launches Claude Code with the `etch-plan` skill to generate a structured plan in `.etch/plans/`.
 
 ### 4. Review and refine
 
@@ -73,14 +73,20 @@ etch review auth-system
 
 Opens an interactive TUI where you can scroll through the plan, leave comments, and trigger AI refinement.
 
-### 5. Generate context and hand off to an agent
+### 5. Run a task with Claude Code
+
+```bash
+etch run 1.1
+```
+
+This assembles the context and launches Claude Code with the full plan state, task details, completed prerequisites, and prior session notes — everything the agent needs to pick up where work left off.
+
+You can also generate the context file separately and pipe it manually:
 
 ```bash
 etch context 1.1
 cat .etch/context/auth-system--task-1.1--001.md | claude
 ```
-
-The context file includes the full plan state, your task's details, completed prerequisites, and prior session notes — everything an AI agent needs to pick up where work left off.
 
 ### 6. Check progress
 
@@ -98,7 +104,7 @@ Initialize etch in the current project. Creates `.etch/` directory structure, co
 
 ### `etch plan <description>`
 
-Generate an implementation plan from a feature description. Streams the AI response to your terminal and saves the plan as markdown.
+Generate an implementation plan by launching Claude Code with the `etch-plan` skill. Claude Code creates the plan interactively and saves it as markdown.
 
 ```bash
 etch plan "Add rate limiting to the API endpoints"
@@ -124,9 +130,19 @@ Open the interactive TUI to review a plan. Browse tasks, leave comments, and ref
 | `a` | Apply AI refinement |
 | `q` | Quit |
 
+### `etch run [plan-name] [task-id]`
+
+Assemble context and launch Claude Code to execute a task. If no task is specified, auto-selects the next pending task.
+
+```bash
+etch run 1.2                  # Run task 1.2
+etch run auth-system 1.2      # Specify plan and task
+etch run                      # Auto-select next task
+```
+
 ### `etch replan [plan-name] <target>`
 
-Regenerate part of a plan with AI, incorporating progress and feedback.
+Regenerate part of a plan by launching Claude Code, incorporating progress and feedback.
 
 ```bash
 etch replan 1.2              # Replan task 1.2
@@ -134,7 +150,7 @@ etch replan feature:2        # Replan all of feature 2
 etch replan "Feature Title"  # Replan by title
 ```
 
-Creates a backup before making changes and shows a diff for confirmation.
+Creates a backup before making changes.
 
 ### `etch context [plan-name] [task-id]`
 
@@ -173,6 +189,14 @@ etch delete auth-system
 etch delete auth-system -y    # Skip confirmation
 ```
 
+### `etch skill install`
+
+Install or update the `etch-plan` Claude Code skill in the current project. This writes the skill definition to `.claude/skills/etch-plan/SKILL.md`.
+
+```bash
+etch skill install
+```
+
 ### Global Flags
 
 | Flag | Description |
@@ -186,24 +210,21 @@ etch delete auth-system -y    # Skip confirmation
 Etch reads configuration from `.etch/config.toml`:
 
 ```toml
-[api]
-model = "claude-sonnet-4-20250514"
-api_key = ""  # or set ANTHROPIC_API_KEY env var
-
 [defaults]
 complexity_guide = "small = single focused session, medium = may need iteration, large = multiple sessions likely"
 ```
 
-**API key resolution order:**
-1. `ANTHROPIC_API_KEY` environment variable (recommended)
-2. `api_key` in `.etch/config.toml`
+### Prerequisites
+
+- **Claude Code** must be installed and authenticated. Etch delegates plan generation, replanning, and task execution to Claude Code.
+- Run `etch skill install` to install the `etch-plan` skill that teaches Claude Code the etch plan format.
 
 ## Project Structure
 
 ```
 your-project/
 └── .etch/
-    ├── config.toml        # API key, model, defaults
+    ├── config.toml        # Project configuration
     ├── plans/             # Plan markdown files (source of truth)
     │   └── auth-system.md
     ├── progress/          # Per-session execution logs
@@ -219,7 +240,7 @@ your-project/
 - `progress/` — your choice at `etch init`
 - `context/` — never (regenerable)
 - `backups/` — never
-- `config.toml` — never (may contain API key reference)
+- `config.toml` — never (project-specific settings)
 
 ## Plan Format
 
@@ -254,22 +275,21 @@ Create the users table migration and Go model.
 The typical etch workflow looks like this:
 
 ```
-etch plan → etch review → etch context → agent works → etch status → repeat
+etch plan → etch review → etch run → etch status → repeat
 ```
 
-1. **Plan** — Generate a structured implementation plan
+1. **Plan** — Generate a structured implementation plan via Claude Code
 2. **Review** — Read through, leave comments, refine with AI
-3. **Context** — Generate a prompt file for the next task
-4. **Execute** — Pipe context to your AI agent; it works and updates the progress file
-5. **Status** — Reconcile progress, update the plan, see what's next
-6. **Repeat** — Generate context for the next task
+3. **Run** — Launch Claude Code with assembled context to execute the next task
+4. **Status** — Reconcile progress, update the plan, see what's next
+5. **Repeat** — Run the next task
 
 ## Contributing
 
 ### Prerequisites
 
 - Go 1.24+
-- An Anthropic API key (for AI features)
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated
 
 ### Development
 
@@ -286,14 +306,16 @@ go test ./...
 cmd/           CLI command definitions (urfave/cli)
 internal/
   api/         Anthropic API client
+  claude/      Claude Code subprocess runner
   config/      TOML config management
   context/     Context prompt assembly
   errors/      Typed errors with hints
-  generator/   Plan generation, refinement, replan
+  generator/   Slug generation, target resolution, backups
   parser/      Plan markdown parser
   plan/        Data models
   progress/    Progress file reader/writer
   serializer/  Plan markdown serializer
+  skill/       Embedded etch-plan skill content
   status/      Status reconciliation
   tui/         Bubbletea TUI for review
 ```

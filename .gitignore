@@ -1,6 +1,9 @@
 # Etch binary
 /etch
 
+# Etch data
+.etch/
+
 # Go
 *.exe
 *.exe~
