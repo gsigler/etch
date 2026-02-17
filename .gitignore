@@ -1,9 +1,6 @@
 # Etch binary
 /etch
 
-# Etch data
-.etch/
-
 # Go
 *.exe
 *.exe~
@@ -15,3 +12,7 @@
 vendor/
 go.work
 go.work.sum
+
+
+.etch/progress/*
+.etch/context/*
