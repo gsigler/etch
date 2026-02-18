@@ -76,7 +76,7 @@ Opens an interactive TUI where you can scroll through the plan, leave comments, 
 ### 5. Run a task with Claude Code
 
 ```bash
-etch run 1.1
+etch run -t 1.1
 ```
 
 This assembles the context and launches Claude Code with the full plan state, task details, completed prerequisites, and prior session notes — everything the agent needs to pick up where work left off.
@@ -84,7 +84,7 @@ This assembles the context and launches Claude Code with the full plan state, ta
 You can also generate the context file separately and pipe it manually:
 
 ```bash
-etch context 1.1
+etch context -t 1.1
 cat .etch/context/auth-system--task-1.1--001.md | claude
 ```
 
@@ -130,36 +130,37 @@ Open the interactive TUI to review a plan. Browse tasks, leave comments, and ref
 | `a` | Apply AI refinement |
 | `q` | Quit |
 
-### `etch run [plan-name] [task-id]`
+### `etch run [-p <plan>] [-t <task-id>]`
 
 Assemble context and launch Claude Code to execute a task. If no task is specified, auto-selects the next pending task.
 
 ```bash
-etch run 1.2                  # Run task 1.2
-etch run auth-system 1.2      # Specify plan and task
-etch run                      # Auto-select next task
+etch run -t 1.2                  # Run task 1.2
+etch run -p auth-system -t 1.2   # Specify plan and task
+etch run                         # Auto-select next task
 ```
 
-### `etch replan [plan-name] <target>`
+### `etch replan [-p <plan>] [--target <target>]`
 
 Regenerate part of a plan by launching Claude Code, incorporating progress and feedback.
 
 ```bash
-etch replan 1.2              # Replan task 1.2
-etch replan feature:2        # Replan all of feature 2
-etch replan "Feature Title"  # Replan by title
+etch replan --target 1.2              # Replan task 1.2
+etch replan --target feature:2        # Replan all of feature 2
+etch replan --target "Feature Title"  # Replan by title
+etch replan -p my-plan --target 1.2   # Replan task in specific plan
 ```
 
 Creates a backup before making changes.
 
-### `etch context [plan-name] [task-id]`
+### `etch context [-p <plan>] [-t <task-id>]`
 
 Generate a context prompt file for an AI agent. If no task is specified, auto-selects the next pending task.
 
 ```bash
-etch context 1.2
-etch context auth-system 1.2
-etch context                  # Auto-select next task
+etch context -t 1.2
+etch context -p auth-system -t 1.2
+etch context                         # Auto-select next task
 ```
 
 ### `etch status [plan-slug]`

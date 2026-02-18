@@ -15,9 +15,20 @@ import (
 
 func contextCmd() *cli.Command {
 	return &cli.Command{
-		Name:      "context",
-		Usage:     "Generate context prompt for AI agent",
-		ArgsUsage: "[plan-name] [task-id]",
+		Name:  "context",
+		Usage: "Generate context prompt for AI agent",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:    "plan",
+				Aliases: []string{"p"},
+				Usage:   "plan slug",
+			},
+			&cli.StringFlag{
+				Name:    "task",
+				Aliases: []string{"t"},
+				Usage:   "task ID (e.g. 1.2)",
+			},
+		},
 		Action: func(c *cli.Context) error {
 			return runContext(c)
 		},
@@ -33,7 +44,7 @@ type resolvedContext struct {
 
 // resolveContextArgs parses CLI arguments, resolves the plan and task, and
 // assembles the context. Shared between `etch context` and `etch run`.
-func resolveContextArgs(c *cli.Context, cmdName string) (*resolvedContext, error) {
+func resolveContextArgs(c *cli.Context) (*resolvedContext, error) {
 	rootDir, err := findProjectRoot()
 	if err != nil {
 		return nil, err
@@ -44,36 +55,19 @@ func resolveContextArgs(c *cli.Context, cmdName string) (*resolvedContext, error
 		return nil, err
 	}
 
-	var planSlug, taskID string
+	planSlug := c.String("plan")
+	taskID := c.String("task")
 
-	args := c.Args().Slice()
-	switch len(args) {
-	case 0:
-		// Auto-select: check if picker needed.
-		if len(plans) > 1 {
-			needsPicker, ambiguousPlans := etchcontext.NeedsPlanPicker(plans, rootDir)
-			if needsPicker {
-				slug, err := pickPlan(ambiguousPlans)
-				if err != nil {
-					return nil, err
-				}
-				planSlug = slug
+	// Auto-select plan if not specified.
+	if planSlug == "" && len(plans) > 1 {
+		needsPicker, ambiguousPlans := etchcontext.NeedsPlanPicker(plans, rootDir)
+		if needsPicker {
+			slug, err := pickPlan(ambiguousPlans)
+			if err != nil {
+				return nil, err
 			}
+			planSlug = slug
 		}
-	case 1:
-		// Could be a task ID or a plan slug.
-		arg := args[0]
-		if looksLikeTaskID(arg) {
-			taskID = arg
-		} else {
-			planSlug = arg
-		}
-	case 2:
-		planSlug = args[0]
-		taskID = args[1]
-	default:
-		return nil, etcherr.Usage("too many arguments").
-			WithHint(fmt.Sprintf("usage: etch %s [plan-name] [task-id]", cmdName))
 	}
 
 	plan, task, err := etchcontext.ResolveTask(plans, planSlug, taskID, rootDir)
@@ -90,7 +84,7 @@ func resolveContextArgs(c *cli.Context, cmdName string) (*resolvedContext, error
 }
 
 func runContext(c *cli.Context) error {
-	rc, err := resolveContextArgs(c, "context")
+	rc, err := resolveContextArgs(c)
 	if err != nil {
 		return err
 	}
@@ -138,24 +132,6 @@ func findProjectRoot() (string, error) {
 	}
 }
 
-// looksLikeTaskID returns true if the string looks like a task ID (e.g. "1.2", "3", "1.3b").
-func looksLikeTaskID(s string) bool {
-	if len(s) == 0 {
-		return false
-	}
-	// Must start with a digit.
-	if s[0] < '0' || s[0] > '9' {
-		return false
-	}
-	// Allow digits, dots, and trailing letters.
-	for _, r := range s {
-		if (r >= '0' && r <= '9') || r == '.' || (r >= 'a' && r <= 'z') {
-			continue
-		}
-		return false
-	}
-	return true
-}
 
 func pickPlan(plans []*models.Plan) (string, error) {
 	fmt.Println("Which plan?")

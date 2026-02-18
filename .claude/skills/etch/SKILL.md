@@ -54,24 +54,26 @@ Open a plan file in your editor.
 
 Delete a plan and its progress files. Prompts for confirmation unless `--yes` is passed.
 
-### `etch replan [plan-name] <target>`
+### `etch replan [-p <plan>] [--target <target>]`
 
 Regenerate part of a plan incorporating progress and feedback.
 
 ```bash
-etch replan 1.2                  # replan Task 1.2
-etch replan feature:2            # replan Feature 2
-etch replan "Login System"       # replan feature by title
-etch replan my-plan 1.2          # replan task in a specific plan
+etch replan                              # replan the only plan (or pick from list)
+etch replan -p my-plan                   # replan entire plan by name
+etch replan --target 1.2                 # replan Task 1.2
+etch replan --target feature:2           # replan Feature 2
+etch replan --target "Login System"      # replan feature by title
+etch replan -p my-plan --target 1.2      # replan task in a specific plan
 ```
 
 ## Running tasks
 
-### `etch context [plan-name] [task-id]`
+### `etch context [-p <plan>] [-t <task-id>]`
 
 Generate the context prompt for a task. Outputs the assembled context that would be passed to an AI agent, including plan state, task details, and session history.
 
-### `etch run [plan-name] [task-id]`
+### `etch run [-p <plan>] [-t <task-id>]`
 
 Launch Claude Code with assembled context for a task. Automatically resolves the next pending task if no task ID is given.
 
@@ -79,82 +81,81 @@ Launch Claude Code with assembled context for a task. Automatically resolves the
 
 Use `etch progress` subcommands to report work on tasks. These commands update both the plan file (task status, criteria) and session progress files in `.etch/progress/`.
 
-All subcommands accept `[plan-name] <task-id>`. When there is only one plan, `plan-name` can be omitted.
+All subcommands use flags: `--task, -t` (required) for the task ID and `--plan, -p` (required) for the plan slug.
 
-### `etch progress start [plan-name] <task-id>`
+### `etch progress start -p <plan> -t <task-id>`
 
 Mark a task as in-progress. Creates a session progress file if one doesn't exist, or reuses the latest session. Always run this before beginning work on a task.
 
 ```bash
-etch progress start 1.3
-etch progress start my-plan 2.1
+etch progress start -p my-plan -t 1.3
 ```
 
-### `etch progress update [plan-name] <task-id> -m "text"`
+### `etch progress update -p <plan> -t <task-id> -m "text"`
 
 Log a progress note. Appends a timestamped entry to the "Changes Made" section of the session progress file.
 
 - `--message, -m` (required) — the update message
 
 ```bash
-etch progress update 1.3 -m "Added validation to signup form"
+etch progress update -p my-plan -t 1.3 -m "Added validation to signup form"
 ```
 
-### `etch progress criteria [plan-name] <task-id> --check "text"`
+### `etch progress criteria -p <plan> -t <task-id> --check "text"`
 
 Check off acceptance criteria in the plan file. Supports exact or case-insensitive substring matching. Can be specified multiple times.
 
 - `--check` (required, repeatable) — criterion text to match
 
 ```bash
-etch progress criteria 1.3 --check "Unit tests pass"
-etch progress criteria 1.3 --check "validation" --check "error messages"
+etch progress criteria -p my-plan -t 1.3 --check "Unit tests pass"
+etch progress criteria -p my-plan -t 1.3 --check "validation" --check "error messages"
 ```
 
-### `etch progress done [plan-name] <task-id>`
+### `etch progress done -p <plan> -t <task-id>`
 
 Mark a task as completed. Updates plan and session status. Warns if any acceptance criteria are still unchecked.
 
 ```bash
-etch progress done 1.3
+etch progress done -p my-plan -t 1.3
 ```
 
-### `etch progress block [plan-name] <task-id> --reason "text"`
+### `etch progress block -p <plan> -t <task-id> --reason "text"`
 
 Mark a task as blocked. Appends the reason to the "Blockers" section of the progress file.
 
 - `--reason` (required) — why the task is blocked
 
 ```bash
-etch progress block 1.3 --reason "Waiting on API schema from backend team"
+etch progress block -p my-plan -t 1.3 --reason "Waiting on API schema from backend team"
 ```
 
-### `etch progress fail [plan-name] <task-id> --reason "text"`
+### `etch progress fail -p <plan> -t <task-id> --reason "text"`
 
 Mark a task as failed. Appends the reason to the "Blockers" section of the progress file.
 
 - `--reason` (required) — why the task failed
 
 ```bash
-etch progress fail 1.3 --reason "Approach is not viable, needs redesign"
+etch progress fail -p my-plan -t 1.3 --reason "Approach is not viable, needs redesign"
 ```
 
 ### Typical progress workflow
 
 ```bash
 # 1. Start working on a task
-etch progress start 1.3
+etch progress start -p my-plan -t 1.3
 
 # 2. Log updates as you work
-etch progress update 1.3 -m "Implemented input validation"
-etch progress update 1.3 -m "Added error message display"
+etch progress update -p my-plan -t 1.3 -m "Implemented input validation"
+etch progress update -p my-plan -t 1.3 -m "Added error message display"
 
 # 3. Check off acceptance criteria as you meet them
-etch progress criteria 1.3 --check "Validates email format"
-etch progress criteria 1.3 --check "Shows inline errors"
+etch progress criteria -p my-plan -t 1.3 --check "Validates email format"
+etch progress criteria -p my-plan -t 1.3 --check "Shows inline errors"
 
 # 4. Mark the task as done
-etch progress done 1.3
+etch progress done -p my-plan -t 1.3
 ```
 
 ## Key concepts

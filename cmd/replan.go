@@ -10,28 +10,39 @@ import (
 	"github.com/gsigler/etch/internal/generator"
 	"github.com/gsigler/etch/internal/models"
 	"github.com/gsigler/etch/internal/parser"
+	"github.com/gsigler/etch/internal/serializer"
 	"github.com/urfave/cli/v2"
 )
 
 func replanCmd() *cli.Command {
 	return &cli.Command{
-		Name:      "replan",
-		Usage:     "Regenerate plan incorporating progress and feedback",
-		ArgsUsage: "[plan-name] <target>",
-		Description: `Replan a task or feature that needs rethinking.
+		Name:  "replan",
+		Usage: "Regenerate plan incorporating progress and feedback",
+		Description: `Replan an entire plan, a feature, or a single task.
 
-Target resolution:
-  etch replan 1.2            → replan Task 1.2
-  etch replan feature:2      → replan Feature 2
-  etch replan "Login System"  → replan feature by title
-  etch replan my-plan 1.2    → replan task 1.2 in specific plan`,
+Examples:
+  etch replan                             → replan the only plan (or pick from list)
+  etch replan -p my-plan                  → replan entire plan by name
+  etch replan --target 1.2               → replan Task 1.2
+  etch replan --target feature:2         → replan Feature 2
+  etch replan --target "Login System"    → replan feature by title
+  etch replan -p my-plan --target 1.2    → replan task 1.2 in specific plan`,
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:    "plan",
+				Aliases: []string{"p"},
+				Usage:   "plan slug",
+			},
+			&cli.StringFlag{
+				Name:  "target",
+				Usage: "replan target: task ID (1.2), feature (feature:2), or feature title",
+			},
+			&cli.IntFlag{
+				Name:  "priority",
+				Usage: "set plan priority (lower = higher priority)",
+			},
+		},
 		Action: func(c *cli.Context) error {
-			args := c.Args().Slice()
-			if len(args) == 0 {
-				return etcherr.Usage("target is required").
-					WithHint("usage: etch replan <target>  (e.g. 'etch replan 1.2' or 'etch replan feature:2')")
-			}
-
 			rootDir, err := findProjectRoot()
 			if err != nil {
 				return err
@@ -43,18 +54,8 @@ Target resolution:
 				return err
 			}
 
-			// Parse args: [plan-slug] <target>
-			var planSlug, targetStr string
-			switch len(args) {
-			case 1:
-				targetStr = args[0]
-			case 2:
-				planSlug = args[0]
-				targetStr = args[1]
-			default:
-				return etcherr.Usage("too many arguments").
-					WithHint("usage: etch replan [plan-name] <target>")
-			}
+			planSlug := c.String("plan")
+			targetStr := c.String("target")
 
 			// Find the plan.
 			var plan *models.Plan
@@ -78,23 +79,6 @@ Target resolution:
 				}
 			}
 
-			// Resolve the target.
-			target, err := generator.ResolveTarget(plan, targetStr)
-			if err != nil {
-				return err
-			}
-
-			// Display what we're replanning.
-			var targetDesc string
-			switch target.Type {
-			case "task":
-				targetDesc = fmt.Sprintf("Task %s: %s", target.TaskID, target.Task.Title)
-				fmt.Printf("Replanning %s\n", targetDesc)
-			case "feature":
-				targetDesc = fmt.Sprintf("Feature %d: %s", target.FeatureNum, target.Feature.Title)
-				fmt.Printf("Replanning %s\n", targetDesc)
-			}
-
 			// Read the current plan content.
 			planContent, err := os.ReadFile(plan.FilePath)
 			if err != nil {
@@ -109,27 +93,70 @@ Target resolution:
 			}
 			fmt.Printf("Backup saved to: %s\n\n", backupPath)
 
-			// Build the prompt for Claude Code.
-			prompt := fmt.Sprintf(
-				"I need to replan part of an etch implementation plan.\n\n"+
-					"**Target:** %s\n\n"+
-					"**Plan file:** %s\n\n"+
-					"**Current plan content:**\n```markdown\n%s\n```\n\n"+
-					"Please modify the plan file at `%s` to replan the target above. "+
-					"Preserve any completed tasks (marked with ✓) as-is. "+
-					"Update the pending/in-progress tasks for the target to reflect a better approach. "+
-					"Follow the etch plan format with proper markdown headings, task IDs, and acceptance criteria.",
-				targetDesc,
-				plan.FilePath,
-				string(planContent),
-				plan.FilePath,
-			)
+			var prompt string
+			if targetStr == "" {
+				// Whole-plan replan.
+				fmt.Printf("Replanning entire plan: %s\n", plan.Title)
+
+				prompt = fmt.Sprintf(
+					"I need to replan an entire etch implementation plan.\n\n"+
+						"**Plan:** %s\n\n"+
+						"**Plan file:** %s\n\n"+
+						"**Current plan content:**\n```markdown\n%s\n```\n\n"+
+						"Please modify the plan file at `%s` to replan it. "+
+						"Preserve any completed tasks (marked with ✓) as-is. "+
+						"Restructure, reorder, add, remove, or revise any pending/in-progress tasks and features as needed. "+
+						"Follow the etch plan format with proper markdown headings, task IDs, and acceptance criteria.",
+					plan.Title,
+					plan.FilePath,
+					string(planContent),
+					plan.FilePath,
+				)
+			} else {
+				// Targeted replan (task or feature).
+				target, resolveErr := generator.ResolveTarget(plan, targetStr)
+				if resolveErr != nil {
+					return resolveErr
+				}
+
+				var targetDesc string
+				switch target.Type {
+				case "task":
+					targetDesc = fmt.Sprintf("Task %s: %s", target.TaskID, target.Task.Title)
+				case "feature":
+					targetDesc = fmt.Sprintf("Feature %d: %s", target.FeatureNum, target.Feature.Title)
+				}
+				fmt.Printf("Replanning %s\n", targetDesc)
+
+				prompt = fmt.Sprintf(
+					"I need to replan part of an etch implementation plan.\n\n"+
+						"**Target:** %s\n\n"+
+						"**Plan file:** %s\n\n"+
+						"**Current plan content:**\n```markdown\n%s\n```\n\n"+
+						"Please modify the plan file at `%s` to replan the target above. "+
+						"Preserve any completed tasks (marked with ✓) as-is. "+
+						"Update the pending/in-progress tasks for the target to reflect a better approach. "+
+						"Follow the etch plan format with proper markdown headings, task IDs, and acceptance criteria.",
+					targetDesc,
+					plan.FilePath,
+					string(planContent),
+					plan.FilePath,
+				)
+			}
 
 			fmt.Println("Launching Claude Code to replan...")
 			fmt.Println()
 
-			if err := claude.Run(prompt, rootDir); err != nil {
+			if err := claude.RunWithStdin(prompt, rootDir); err != nil {
 				return err
+			}
+
+			// Apply priority surgically if flag was set.
+			if priority := c.Int("priority"); priority > 0 {
+				if err := serializer.UpdatePlanPriority(plan.FilePath, priority); err != nil {
+					return etcherr.WrapIO("setting plan priority", err).
+						WithHint("the plan was replanned but priority could not be set — edit the file manually")
+				}
 			}
 
 			// Verify the plan file still parses correctly.

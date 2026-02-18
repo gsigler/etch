@@ -12,11 +12,22 @@ import (
 
 func runCmd() *cli.Command {
 	return &cli.Command{
-		Name:      "run",
-		Usage:     "Launch Claude Code with assembled context for a task",
-		ArgsUsage: "[plan-name] [task-id]",
+		Name:  "run",
+		Usage: "Launch Claude Code with assembled context for a task",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:    "plan",
+				Aliases: []string{"p"},
+				Usage:   "plan slug",
+			},
+			&cli.StringFlag{
+				Name:    "task",
+				Aliases: []string{"t"},
+				Usage:   "task ID (e.g. 1.2)",
+			},
+		},
 		Action: func(c *cli.Context) error {
-			rc, err := resolveContextArgs(c, "run")
+			rc, err := resolveContextArgs(c)
 			if err != nil {
 				return err
 			}
