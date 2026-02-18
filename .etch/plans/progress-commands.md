@@ -114,7 +114,7 @@ Both commands should find the latest session file (error with hint if none exist
 - [x] Fail reason is appended to Blockers section
 - [x] Both error with helpful hint if no session file exists
 
-### Task 5: Add progress file update helpers and tests [pending]
+### Task 5: Add progress file update helpers and tests [completed]
 **Complexity:** medium
 **Files:** internal/progress/progress.go, internal/progress/progress_test.go, cmd/progress_test.go
 **Depends on:** Task 2, Task 3, Task 4
@@ -130,11 +130,11 @@ Write tests:
 - `cmd/progress_test.go`: Integration-style tests that create temp `.etch/` directories with plan and progress files, run progress subcommands, and verify both plan and progress files are updated correctly.
 
 **Acceptance Criteria:**
-- [ ] `progress.UpdateStatus` surgically updates the Status line
-- [ ] `progress.UpdateCriterion` updates criterion checkbox in progress files
-- [ ] Unit tests for all new progress package functions
-- [ ] Integration tests for start, update, done, criteria, block, fail subcommands
-- [ ] All tests pass with `go test ./...`
+- [x] `progress.UpdateStatus` surgically updates the Status line
+- [x] `progress.UpdateCriterion` updates criterion checkbox in progress files
+- [x] Unit tests for all new progress package functions
+- [x] Integration tests for start, update, done, criteria, block, fail subcommands
+- [x] All tests pass with `go test ./...`
 
 ### Task 6: Update etch skill documentation [completed]
 **Complexity:** small

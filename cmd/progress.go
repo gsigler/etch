@@ -14,6 +14,25 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
+// progressFlags returns fresh flag instances for each subcommand to avoid
+// shared state issues in urfave/cli v2.
+func progressFlags() []cli.Flag {
+	return []cli.Flag{
+		&cli.StringFlag{
+			Name:     "plan",
+			Aliases:  []string{"p"},
+			Usage:    "plan slug",
+			Required: true,
+		},
+		&cli.StringFlag{
+			Name:     "task",
+			Aliases:  []string{"t"},
+			Usage:    "task ID (e.g. 1.2)",
+			Required: true,
+		},
+	}
+}
+
 func progressCmd() *cli.Command {
 	return &cli.Command{
 		Name:  "progress",
@@ -31,9 +50,9 @@ func progressCmd() *cli.Command {
 
 func progressStartCmd() *cli.Command {
 	return &cli.Command{
-		Name:      "start",
-		Usage:     "Mark a task as in progress",
-		ArgsUsage: "[plan-name] <task-id>",
+		Name:  "start",
+		Usage: "Mark a task as in progress",
+		Flags: progressFlags(),
 		Action: func(c *cli.Context) error {
 			return runProgressStart(c)
 		},
@@ -51,22 +70,8 @@ func runProgressStart(c *cli.Context) error {
 		return err
 	}
 
-	var planSlug, taskID string
-
-	args := c.Args().Slice()
-	switch len(args) {
-	case 0:
-		return etcherr.Usage("task ID is required").
-			WithHint("usage: etch progress start [plan-name] <task-id>")
-	case 1:
-		taskID = args[0]
-	case 2:
-		planSlug = args[0]
-		taskID = args[1]
-	default:
-		return etcherr.Usage("too many arguments").
-			WithHint("usage: etch progress start [plan-name] <task-id>")
-	}
+	planSlug := c.String("plan")
+	taskID := c.String("task")
 
 	plan, task, err := etchcontext.ResolveTask(plans, planSlug, taskID, rootDir)
 	if err != nil {
@@ -135,17 +140,14 @@ func extractSessionNumber(path string) int {
 
 func progressUpdateCmd() *cli.Command {
 	return &cli.Command{
-		Name:      "update",
-		Usage:     "Log a progress update for a task",
-		ArgsUsage: "[plan-name] <task-id>",
-		Flags: []cli.Flag{
-			&cli.StringFlag{
-				Name:     "message",
-				Aliases:  []string{"m"},
-				Usage:    "update message (required)",
-				Required: true,
-			},
-		},
+		Name:  "update",
+		Usage: "Log a progress update for a task",
+		Flags: append(progressFlags(), &cli.StringFlag{
+			Name:     "message",
+			Aliases:  []string{"m"},
+			Usage:    "update message",
+			Required: true,
+		}),
 		Action: func(c *cli.Context) error {
 			return runProgressUpdate(c)
 		},
@@ -163,21 +165,8 @@ func runProgressUpdate(c *cli.Context) error {
 		return err
 	}
 
-	var planSlug, taskID string
-	args := c.Args().Slice()
-	switch len(args) {
-	case 0:
-		return etcherr.Usage("task ID is required").
-			WithHint("usage: etch progress update [plan-name] <task-id> --message \"text\"")
-	case 1:
-		taskID = args[0]
-	case 2:
-		planSlug = args[0]
-		taskID = args[1]
-	default:
-		return etcherr.Usage("too many arguments").
-			WithHint("usage: etch progress update [plan-name] <task-id> --message \"text\"")
-	}
+	planSlug := c.String("plan")
+	taskID := c.String("task")
 
 	plan, task, err := etchcontext.ResolveTask(plans, planSlug, taskID, rootDir)
 	if err != nil {
@@ -187,7 +176,7 @@ func runProgressUpdate(c *cli.Context) error {
 	sessionPath, _, err := progress.FindLatestSessionPath(rootDir, plan.Slug, task.FullID())
 	if err != nil {
 		return etcherr.WrapIO("finding session file", err).
-			WithHint(fmt.Sprintf("run 'etch progress start %s' first to create a session", task.FullID()))
+			WithHint(fmt.Sprintf("run 'etch progress start -p %s -t %s' first to create a session", plan.Slug, task.FullID()))
 	}
 
 	message := c.String("message")
@@ -204,9 +193,9 @@ func runProgressUpdate(c *cli.Context) error {
 
 func progressDoneCmd() *cli.Command {
 	return &cli.Command{
-		Name:      "done",
-		Usage:     "Mark a task as completed",
-		ArgsUsage: "[plan-name] <task-id>",
+		Name:  "done",
+		Usage: "Mark a task as completed",
+		Flags: progressFlags(),
 		Action: func(c *cli.Context) error {
 			return runProgressDone(c)
 		},
@@ -224,21 +213,8 @@ func runProgressDone(c *cli.Context) error {
 		return err
 	}
 
-	var planSlug, taskID string
-	args := c.Args().Slice()
-	switch len(args) {
-	case 0:
-		return etcherr.Usage("task ID is required").
-			WithHint("usage: etch progress done [plan-name] <task-id>")
-	case 1:
-		taskID = args[0]
-	case 2:
-		planSlug = args[0]
-		taskID = args[1]
-	default:
-		return etcherr.Usage("too many arguments").
-			WithHint("usage: etch progress done [plan-name] <task-id>")
-	}
+	planSlug := c.String("plan")
+	taskID := c.String("task")
 
 	plan, task, err := etchcontext.ResolveTask(plans, planSlug, taskID, rootDir)
 	if err != nil {
@@ -280,16 +256,13 @@ func runProgressDone(c *cli.Context) error {
 
 func progressCriteriaCmd() *cli.Command {
 	return &cli.Command{
-		Name:      "criteria",
-		Usage:     "Check off acceptance criteria for a task",
-		ArgsUsage: "[plan-name] <task-id>",
-		Flags: []cli.Flag{
-			&cli.StringSliceFlag{
-				Name:     "check",
-				Usage:    "criterion text to check off (can be specified multiple times)",
-				Required: true,
-			},
-		},
+		Name:  "criteria",
+		Usage: "Check off acceptance criteria for a task",
+		Flags: append(progressFlags(), &cli.StringSliceFlag{
+			Name:     "check",
+			Usage:    "criterion text to check off (can be specified multiple times)",
+			Required: true,
+		}),
 		Action: func(c *cli.Context) error {
 			return runProgressCriteria(c)
 		},
@@ -307,21 +280,8 @@ func runProgressCriteria(c *cli.Context) error {
 		return err
 	}
 
-	var planSlug, taskID string
-	args := c.Args().Slice()
-	switch len(args) {
-	case 0:
-		return etcherr.Usage("task ID is required").
-			WithHint("usage: etch progress criteria [plan-name] <task-id> --check \"text\"")
-	case 1:
-		taskID = args[0]
-	case 2:
-		planSlug = args[0]
-		taskID = args[1]
-	default:
-		return etcherr.Usage("too many arguments").
-			WithHint("usage: etch progress criteria [plan-name] <task-id> --check \"text\"")
-	}
+	planSlug := c.String("plan")
+	taskID := c.String("task")
 
 	plan, task, err := etchcontext.ResolveTask(plans, planSlug, taskID, rootDir)
 	if err != nil {
@@ -389,16 +349,13 @@ func updateProgressCriterion(rootDir, planSlug, taskID, criterionText string) {
 
 func progressBlockCmd() *cli.Command {
 	return &cli.Command{
-		Name:      "block",
-		Usage:     "Mark a task as blocked",
-		ArgsUsage: "[plan-name] <task-id>",
-		Flags: []cli.Flag{
-			&cli.StringFlag{
-				Name:     "reason",
-				Usage:    "reason the task is blocked (required)",
-				Required: true,
-			},
-		},
+		Name:  "block",
+		Usage: "Mark a task as blocked",
+		Flags: append(progressFlags(), &cli.StringFlag{
+			Name:     "reason",
+			Usage:    "reason the task is blocked",
+			Required: true,
+		}),
 		Action: func(c *cli.Context) error {
 			return runProgressBlock(c)
 		},
@@ -416,21 +373,8 @@ func runProgressBlock(c *cli.Context) error {
 		return err
 	}
 
-	var planSlug, taskID string
-	args := c.Args().Slice()
-	switch len(args) {
-	case 0:
-		return etcherr.Usage("task ID is required").
-			WithHint("usage: etch progress block [plan-name] <task-id> --reason \"text\"")
-	case 1:
-		taskID = args[0]
-	case 2:
-		planSlug = args[0]
-		taskID = args[1]
-	default:
-		return etcherr.Usage("too many arguments").
-			WithHint("usage: etch progress block [plan-name] <task-id> --reason \"text\"")
-	}
+	planSlug := c.String("plan")
+	taskID := c.String("task")
 
 	plan, task, err := etchcontext.ResolveTask(plans, planSlug, taskID, rootDir)
 	if err != nil {
@@ -447,7 +391,7 @@ func runProgressBlock(c *cli.Context) error {
 	sessionPath, _, err := progress.FindLatestSessionPath(rootDir, plan.Slug, task.FullID())
 	if err != nil {
 		return etcherr.WrapIO("finding session file", err).
-			WithHint(fmt.Sprintf("run 'etch progress start %s' first to create a session", task.FullID()))
+			WithHint(fmt.Sprintf("run 'etch progress start -p %s -t %s' first to create a session", plan.Slug, task.FullID()))
 	}
 
 	// Update progress file status to blocked.
@@ -468,16 +412,13 @@ func runProgressBlock(c *cli.Context) error {
 
 func progressFailCmd() *cli.Command {
 	return &cli.Command{
-		Name:      "fail",
-		Usage:     "Mark a task as failed",
-		ArgsUsage: "[plan-name] <task-id>",
-		Flags: []cli.Flag{
-			&cli.StringFlag{
-				Name:     "reason",
-				Usage:    "reason the task failed (required)",
-				Required: true,
-			},
-		},
+		Name:  "fail",
+		Usage: "Mark a task as failed",
+		Flags: append(progressFlags(), &cli.StringFlag{
+			Name:     "reason",
+			Usage:    "reason the task failed",
+			Required: true,
+		}),
 		Action: func(c *cli.Context) error {
 			return runProgressFail(c)
 		},
@@ -495,21 +436,8 @@ func runProgressFail(c *cli.Context) error {
 		return err
 	}
 
-	var planSlug, taskID string
-	args := c.Args().Slice()
-	switch len(args) {
-	case 0:
-		return etcherr.Usage("task ID is required").
-			WithHint("usage: etch progress fail [plan-name] <task-id> --reason \"text\"")
-	case 1:
-		taskID = args[0]
-	case 2:
-		planSlug = args[0]
-		taskID = args[1]
-	default:
-		return etcherr.Usage("too many arguments").
-			WithHint("usage: etch progress fail [plan-name] <task-id> --reason \"text\"")
-	}
+	planSlug := c.String("plan")
+	taskID := c.String("task")
 
 	plan, task, err := etchcontext.ResolveTask(plans, planSlug, taskID, rootDir)
 	if err != nil {
@@ -526,7 +454,7 @@ func runProgressFail(c *cli.Context) error {
 	sessionPath, _, err := progress.FindLatestSessionPath(rootDir, plan.Slug, task.FullID())
 	if err != nil {
 		return etcherr.WrapIO("finding session file", err).
-			WithHint(fmt.Sprintf("run 'etch progress start %s' first to create a session", task.FullID()))
+			WithHint(fmt.Sprintf("run 'etch progress start -p %s -t %s' first to create a session", plan.Slug, task.FullID()))
 	}
 
 	// Update progress file status to failed.
@@ -544,4 +472,3 @@ func runProgressFail(c *cli.Context) error {
 	fmt.Printf("Task %s failed: %s\n", task.FullID(), reason)
 	return nil
 }
-

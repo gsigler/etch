@@ -50,7 +50,6 @@ func setupTestProject(t *testing.T, planContent string) string {
 	return dir
 }
 
-
 func TestProgressStart_CreatesSessionFile(t *testing.T) {
 	dir := setupTestProject(t, minimalPlanFile("pending"))
 
@@ -58,7 +57,7 @@ func TestProgressStart_CreatesSessionFile(t *testing.T) {
 		Commands: []*cli.Command{progressCmd()},
 	}
 
-	err := app.Run([]string{"etch", "progress", "start", "1.1"})
+	err := app.Run([]string{"etch", "progress", "start", "-p", "test-plan", "-t", "1.1"})
 	if err != nil {
 		t.Fatalf("progress start error: %v", err)
 	}
@@ -92,8 +91,8 @@ func TestProgressStart_ReusesExistingSession(t *testing.T) {
 	}
 
 	// Start twice — should reuse the session file, not create a second one.
-	app.Run([]string{"etch", "progress", "start", "1.1"})
-	err := app.Run([]string{"etch", "progress", "start", "1.1"})
+	app.Run([]string{"etch", "progress", "start", "-p", "test-plan", "-t", "1.1"})
+	err := app.Run([]string{"etch", "progress", "start", "-p", "test-plan", "-t", "1.1"})
 	if err != nil {
 		t.Fatalf("second progress start error: %v", err)
 	}
@@ -112,10 +111,10 @@ func TestProgressUpdate_AppendsMessage(t *testing.T) {
 	}
 
 	// Start first to create the session file.
-	app.Run([]string{"etch", "progress", "start", "1.1"})
+	app.Run([]string{"etch", "progress", "start", "-p", "test-plan", "-t", "1.1"})
 
 	// Then update.
-	err := app.Run([]string{"etch", "progress", "update", "--message", "Added foo.go", "1.1"})
+	err := app.Run([]string{"etch", "progress", "update", "-p", "test-plan", "-t", "1.1", "-m", "Added foo.go"})
 	if err != nil {
 		t.Fatalf("progress update error: %v", err)
 	}
@@ -135,7 +134,7 @@ func TestProgressUpdate_ErrorsWithoutSession(t *testing.T) {
 		Commands: []*cli.Command{progressCmd()},
 	}
 
-	err := app.Run([]string{"etch", "progress", "update", "--message", "test", "1.1"})
+	err := app.Run([]string{"etch", "progress", "update", "-p", "test-plan", "-t", "1.1", "-m", "test"})
 	if err == nil {
 		t.Fatal("expected error when no session exists")
 	}
@@ -149,9 +148,9 @@ func TestProgressDone_CompletesTask(t *testing.T) {
 	}
 
 	// Start first to create a session file.
-	app.Run([]string{"etch", "progress", "start", "1.1"})
+	app.Run([]string{"etch", "progress", "start", "-p", "test-plan", "-t", "1.1"})
 
-	err := app.Run([]string{"etch", "progress", "done", "1.1"})
+	err := app.Run([]string{"etch", "progress", "done", "-p", "test-plan", "-t", "1.1"})
 	if err != nil {
 		t.Fatalf("progress done error: %v", err)
 	}
@@ -180,9 +179,9 @@ func TestProgressCriteria_ChecksOff(t *testing.T) {
 	}
 
 	// Start first.
-	app.Run([]string{"etch", "progress", "start", "1.1"})
+	app.Run([]string{"etch", "progress", "start", "-p", "test-plan", "-t", "1.1"})
 
-	err := app.Run([]string{"etch", "progress", "criteria", "--check", "Thing works", "1.1"})
+	err := app.Run([]string{"etch", "progress", "criteria", "-p", "test-plan", "-t", "1.1", "--check", "Thing works"})
 	if err != nil {
 		t.Fatalf("progress criteria error: %v", err)
 	}
@@ -210,10 +209,10 @@ func TestProgressCriteria_SubstringMatch(t *testing.T) {
 		Commands: []*cli.Command{progressCmd()},
 	}
 
-	app.Run([]string{"etch", "progress", "start", "1.1"})
+	app.Run([]string{"etch", "progress", "start", "-p", "test-plan", "-t", "1.1"})
 
 	// Use a substring that should match "Thing is tested".
-	err := app.Run([]string{"etch", "progress", "criteria", "--check", "is tested", "1.1"})
+	err := app.Run([]string{"etch", "progress", "criteria", "-p", "test-plan", "-t", "1.1", "--check", "is tested"})
 	if err != nil {
 		t.Fatalf("progress criteria error: %v", err)
 	}
@@ -231,9 +230,9 @@ func TestProgressBlock_BlocksTask(t *testing.T) {
 		Commands: []*cli.Command{progressCmd()},
 	}
 
-	app.Run([]string{"etch", "progress", "start", "1.1"})
+	app.Run([]string{"etch", "progress", "start", "-p", "test-plan", "-t", "1.1"})
 
-	err := app.Run([]string{"etch", "progress", "block", "--reason", "Waiting on API", "1.1"})
+	err := app.Run([]string{"etch", "progress", "block", "-p", "test-plan", "-t", "1.1", "--reason", "Waiting on API"})
 	if err != nil {
 		t.Fatalf("progress block error: %v", err)
 	}
@@ -263,9 +262,9 @@ func TestProgressFail_FailsTask(t *testing.T) {
 		Commands: []*cli.Command{progressCmd()},
 	}
 
-	app.Run([]string{"etch", "progress", "start", "1.1"})
+	app.Run([]string{"etch", "progress", "start", "-p", "test-plan", "-t", "1.1"})
 
-	err := app.Run([]string{"etch", "progress", "fail", "--reason", "Tests broken", "1.1"})
+	err := app.Run([]string{"etch", "progress", "fail", "-p", "test-plan", "-t", "1.1", "--reason", "Tests broken"})
 	if err != nil {
 		t.Fatalf("progress fail error: %v", err)
 	}
@@ -288,7 +287,7 @@ func TestProgressFail_FailsTask(t *testing.T) {
 	}
 }
 
-func TestProgressStart_NoArgs(t *testing.T) {
+func TestProgressStart_NoTask(t *testing.T) {
 	setupTestProject(t, minimalPlanFile("pending"))
 
 	app := &cli.App{
@@ -297,6 +296,6 @@ func TestProgressStart_NoArgs(t *testing.T) {
 
 	err := app.Run([]string{"etch", "progress", "start"})
 	if err == nil {
-		t.Fatal("expected error with no args")
+		t.Fatal("expected error with no --task flag")
 	}
 }
