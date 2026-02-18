@@ -21,6 +21,7 @@ type PlanStatus struct {
 	Title          string          `json:"title"`
 	Slug           string          `json:"slug"`
 	FilePath       string          `json:"file_path"`
+	Priority       int             `json:"priority"`
 	Features       []FeatureStatus `json:"features"`
 	CompletedTasks int             `json:"completed_tasks"`
 	TotalTasks     int             `json:"total_tasks"`
@@ -126,6 +127,7 @@ func reconcile(plan *models.Plan, progressMap map[string][]models.SessionProgres
 		Title:    plan.Title,
 		Slug:     plan.Slug,
 		FilePath: plan.FilePath,
+		Priority: plan.Priority,
 	}
 
 	for i := range plan.Features {
@@ -321,7 +323,11 @@ func FormatSummary(plans []PlanStatus) string {
 			b.WriteString("\n────────────────────────────────────────\n\n")
 		}
 		pct := p.Percentage()
-		b.WriteString(fmt.Sprintf("📋 %s  %s\n", p.Title, progressBar(pct)))
+		priorityTag := "[ ]"
+		if p.Priority > 0 {
+			priorityTag = fmt.Sprintf("[%d]", p.Priority)
+		}
+		b.WriteString(fmt.Sprintf("📋 %s %s  %s\n", priorityTag, p.Title, progressBar(pct)))
 		b.WriteString(fmt.Sprintf("  slug: %s\n", p.Slug))
 
 		for _, f := range p.Features {
@@ -346,7 +352,11 @@ func FormatSummary(plans []PlanStatus) string {
 func FormatDetailed(ps PlanStatus) string {
 	var b strings.Builder
 	pct := ps.Percentage()
-	b.WriteString(fmt.Sprintf("📋 %s  %s\n", ps.Title, progressBar(pct)))
+	priorityTag := "[ ]"
+	if ps.Priority > 0 {
+		priorityTag = fmt.Sprintf("[%d]", ps.Priority)
+	}
+	b.WriteString(fmt.Sprintf("📋 %s %s  %s\n", priorityTag, ps.Title, progressBar(pct)))
 	b.WriteString(fmt.Sprintf("  slug: %s\n\n", ps.Slug))
 
 	for _, f := range ps.Features {
@@ -422,9 +432,19 @@ func taskIcon(t TaskStatus) string {
 	return t.Status.Icon()
 }
 
-// SortPlanStatuses sorts plans alphabetically by title for consistent output.
+// SortPlanStatuses sorts plans by priority first (ascending, unset/0 last), then alphabetically by title.
 func SortPlanStatuses(plans []PlanStatus) {
 	sort.Slice(plans, func(i, j int) bool {
-		return plans[i].Title < plans[j].Title
+		pi, pj := plans[i].Priority, plans[j].Priority
+		if pi == pj {
+			return plans[i].Title < plans[j].Title
+		}
+		if pi == 0 {
+			return false
+		}
+		if pj == 0 {
+			return true
+		}
+		return pi < pj
 	})
 }

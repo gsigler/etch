@@ -12,6 +12,7 @@ import (
 	etcherr "github.com/gsigler/etch/internal/errors"
 	"github.com/gsigler/etch/internal/generator"
 	"github.com/gsigler/etch/internal/parser"
+	"github.com/gsigler/etch/internal/serializer"
 	"github.com/urfave/cli/v2"
 )
 
@@ -25,6 +26,10 @@ func planCmd() *cli.Command {
 				Name:    "name",
 				Aliases: []string{"n"},
 				Usage:   "plan name used for the filename (e.g. auth-system)",
+			},
+			&cli.IntFlag{
+				Name:  "priority",
+				Usage: "set plan priority (lower = higher priority)",
 			},
 		},
 		Action: func(c *cli.Context) error {
@@ -89,6 +94,14 @@ func planCmd() *cli.Command {
 			if _, err := os.Stat(planPath); os.IsNotExist(err) {
 				return etcherr.New(etcherr.CatIO, "plan file was not created").
 					WithHint(fmt.Sprintf("expected file at .etch/plans/%s.md — the Claude Code session may have ended before completing the plan", slug))
+			}
+
+			// Apply priority surgically if flag was set.
+			if priority := c.Int("priority"); priority > 0 {
+				if err := serializer.UpdatePlanPriority(planPath, priority); err != nil {
+					return etcherr.WrapIO("setting plan priority", err).
+						WithHint("the plan was created but priority could not be set — edit the file manually")
+				}
 			}
 
 			// Validate the plan parses correctly.

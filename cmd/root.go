@@ -38,6 +38,7 @@ func Execute() (bool, error) {
 			deleteCmd(),
 			skillCmd(),
 			progressCmd(),
+			priorityCmd(),
 		},
 	}
 

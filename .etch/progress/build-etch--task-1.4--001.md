@@ -9,6 +9,7 @@
 - Created `internal/serializer/serializer.go` — full serializer + targeted update functions
 - Created `internal/serializer/serializer_test.go` — 14 tests covering all acceptance criteria
 - Modified `internal/parser/parser.go` — added `criteriaHeadingRe` to skip `**Acceptance Criteria:**` heading lines (needed for clean round-tripping)
+- [19:31] Added priority-based sorting to etch list command. Plans with explicit priorities sort ascending first, unset (0) sorts last, with alphabetical tiebreak. Display format shows [1], [2], [ ] for unset.
 
 ## Acceptance Criteria Updates
 - [x] Full serialize produces valid markdown matching the format spec

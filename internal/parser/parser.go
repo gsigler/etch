@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/gsigler/etch/internal/models"
@@ -34,6 +35,9 @@ var (
 	separatorRe      = regexp.MustCompile(`^---+\s*$`)
 	h2Re             = regexp.MustCompile(`^##\s+`)
 	h3Re             = regexp.MustCompile(`^###\s+`)
+
+	// Plan metadata patterns.
+	priorityRe = regexp.MustCompile(`^\*\*Priority:\*\*\s*(\d+)\s*$`)
 
 	// Task metadata patterns.
 	complexityRe = regexp.MustCompile(`^\*\*Complexity:\*\*\s*(.+)$`)
@@ -249,6 +253,16 @@ func Parse(r io.Reader) (*models.Plan, error) {
 
 		// Check for other ### headings within a task — treat as task description content.
 		// (Don't change state, just accumulate.)
+
+		// Parse plan-level metadata (before any feature heading).
+		if cur == statePlanLevel {
+			if m := priorityRe.FindStringSubmatch(line); m != nil {
+				if n, err := strconv.Atoi(m[1]); err == nil {
+					plan.Priority = n
+				}
+				continue
+			}
+		}
 
 		// Accumulate content into current section.
 		switch cur {

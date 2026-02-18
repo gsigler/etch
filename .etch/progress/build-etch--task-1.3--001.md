@@ -8,6 +8,7 @@
 ## Changes Made
 - Created `internal/parser/parser.go` — line-based state machine parser
 - Created `internal/parser/parser_test.go` — 12 tests covering all acceptance criteria
+- [19:24] Added Priority field to PlanStatus, populated in reconcile, updated SortPlanStatuses for priority-first sorting, updated FormatSummary/FormatDetailed to show [N] tags, added comprehensive tests
 
 ## Acceptance Criteria Updates
 - [x] Parses multi-feature plans into correct Plan/Feature/Task hierarchy

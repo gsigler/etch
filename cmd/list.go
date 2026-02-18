@@ -31,13 +31,19 @@ func runList() error {
 			WithHint("run 'etch plan <description>' to create one")
 	}
 
+	sortPlansByPriority(plans)
+
 	for _, plan := range plans {
 		total, completed := countTasks(plan)
 		pct := 0
 		if total > 0 {
 			pct = completed * 100 / total
 		}
-		fmt.Printf("%-30s  %d/%d tasks  %3d%%\n", plan.Title, completed, total, pct)
+		prioTag := "[ ]"
+		if plan.Priority > 0 {
+			prioTag = fmt.Sprintf("[%d]", plan.Priority)
+		}
+		fmt.Printf("%s %-30s  %d/%d tasks  %3d%%\n", prioTag, plan.Title, completed, total, pct)
 	}
 
 	return nil

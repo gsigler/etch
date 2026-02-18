@@ -637,6 +637,187 @@ Extension description.
 	}
 }
 
+func TestSerialize_WithPriority(t *testing.T) {
+	plan := &models.Plan{
+		Title:    "Priority Plan",
+		Priority: 3,
+		Overview: "Overview text.",
+		Features: []models.Feature{
+			{
+				Number: 1,
+				Title:  "Priority Plan",
+				Tasks: []models.Task{
+					{FeatureNumber: 1, TaskNumber: 1, Title: "A task", Status: models.StatusPending},
+				},
+			},
+		},
+	}
+
+	output := Serialize(plan)
+	assertContains(t, output, "# Plan: Priority Plan\n**Priority:** 3\n")
+	assertContains(t, output, "## Overview")
+}
+
+func TestSerialize_WithoutPriority(t *testing.T) {
+	plan := &models.Plan{
+		Title:    "No Priority Plan",
+		Priority: 0,
+		Overview: "Overview text.",
+		Features: []models.Feature{
+			{
+				Number: 1,
+				Title:  "No Priority Plan",
+				Tasks: []models.Task{
+					{FeatureNumber: 1, TaskNumber: 1, Title: "A task", Status: models.StatusPending},
+				},
+			},
+		},
+	}
+
+	output := Serialize(plan)
+	assertNotContains(t, output, "**Priority:**")
+}
+
+func TestUpdatePlanPriority_Replace(t *testing.T) {
+	content := `# Plan: Test Plan
+**Priority:** 2
+
+## Overview
+
+Some overview.
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "plan.md")
+	os.WriteFile(path, []byte(content), 0644)
+
+	if err := UpdatePlanPriority(path, 5); err != nil {
+		t.Fatalf("UpdatePlanPriority: %v", err)
+	}
+
+	data, _ := os.ReadFile(path)
+	result := string(data)
+	assertContains(t, result, "**Priority:** 5")
+	assertNotContains(t, result, "**Priority:** 2")
+	assertContains(t, result, "## Overview")
+}
+
+func TestUpdatePlanPriority_Insert(t *testing.T) {
+	content := `# Plan: Test Plan
+
+## Overview
+
+Some overview.
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "plan.md")
+	os.WriteFile(path, []byte(content), 0644)
+
+	if err := UpdatePlanPriority(path, 3); err != nil {
+		t.Fatalf("UpdatePlanPriority: %v", err)
+	}
+
+	data, _ := os.ReadFile(path)
+	result := string(data)
+	assertContains(t, result, "# Plan: Test Plan\n**Priority:** 3\n")
+	assertContains(t, result, "## Overview")
+}
+
+func TestUpdatePlanPriority_Remove(t *testing.T) {
+	content := `# Plan: Test Plan
+**Priority:** 4
+
+## Overview
+
+Some overview.
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "plan.md")
+	os.WriteFile(path, []byte(content), 0644)
+
+	if err := UpdatePlanPriority(path, 0); err != nil {
+		t.Fatalf("UpdatePlanPriority: %v", err)
+	}
+
+	data, _ := os.ReadFile(path)
+	result := string(data)
+	assertNotContains(t, result, "**Priority:**")
+	assertContains(t, result, "# Plan: Test Plan")
+	assertContains(t, result, "## Overview")
+}
+
+func TestRoundTrip_WithPriority(t *testing.T) {
+	original := &models.Plan{
+		Title:    "Priority Round Trip",
+		Priority: 7,
+		Overview: "Testing priority round-trip.",
+		Features: []models.Feature{
+			{
+				Number: 1,
+				Title:  "Priority Round Trip",
+				Tasks: []models.Task{
+					{
+						FeatureNumber: 1,
+						TaskNumber:    1,
+						Title:         "First task",
+						Status:        models.StatusPending,
+					},
+				},
+			},
+		},
+	}
+
+	md := Serialize(original)
+	parsed, err := parser.Parse(strings.NewReader(md))
+	if err != nil {
+		t.Fatalf("failed to parse: %v", err)
+	}
+	if parsed.Priority != original.Priority {
+		t.Errorf("priority = %d, want %d", parsed.Priority, original.Priority)
+	}
+
+	// Re-serialize and compare.
+	md2 := Serialize(parsed)
+	if md != md2 {
+		t.Errorf("round-trip produced different output.\nfirst:\n%s\nsecond:\n%s", md, md2)
+	}
+}
+
+func TestRoundTrip_WithoutPriority(t *testing.T) {
+	original := &models.Plan{
+		Title:    "No Priority Round Trip",
+		Priority: 0,
+		Overview: "No priority set.",
+		Features: []models.Feature{
+			{
+				Number: 1,
+				Title:  "No Priority Round Trip",
+				Tasks: []models.Task{
+					{
+						FeatureNumber: 1,
+						TaskNumber:    1,
+						Title:         "First task",
+						Status:        models.StatusPending,
+					},
+				},
+			},
+		},
+	}
+
+	md := Serialize(original)
+	parsed, err := parser.Parse(strings.NewReader(md))
+	if err != nil {
+		t.Fatalf("failed to parse: %v", err)
+	}
+	if parsed.Priority != 0 {
+		t.Errorf("priority = %d, want 0", parsed.Priority)
+	}
+
+	md2 := Serialize(parsed)
+	if md != md2 {
+		t.Errorf("round-trip produced different output.\nfirst:\n%s\nsecond:\n%s", md, md2)
+	}
+}
+
 func assertContains(t *testing.T, s, substr string) {
 	t.Helper()
 	if !strings.Contains(s, substr) {

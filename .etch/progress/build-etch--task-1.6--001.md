@@ -9,6 +9,7 @@
 - `internal/config/config.go` — Config struct, Load(), ResolveAPIKey()
 - `internal/config/config_test.go` — 8 tests covering all acceptance criteria
 - `go.mod` / `go.sum` — upgraded BurntSushi/toml v1.4.0 → v1.6.0 (was indirect dep)
+- [19:41] Created cmd/priority.go with three forms: list (no args), set (slug N), and unset (slug --unset). Registered in root.go. Refactored shared sortPlansByPriority helper to deduplicate sort logic from list.go. All tests pass.
 
 ## Acceptance Criteria Updates
 - [x] Reads `.etch/config.toml`

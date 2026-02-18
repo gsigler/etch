@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 
+	etcherr "github.com/gsigler/etch/internal/errors"
 	"github.com/gsigler/etch/internal/models"
 )
 
@@ -18,6 +19,10 @@ func Serialize(plan *models.Plan) string {
 	b.WriteString("# Plan: ")
 	b.WriteString(plan.Title)
 	b.WriteString("\n")
+
+	if plan.Priority > 0 {
+		b.WriteString(fmt.Sprintf("**Priority:** %d\n", plan.Priority))
+	}
 
 	if plan.Overview != "" {
 		b.WriteString("\n## Overview\n\n")
@@ -217,6 +222,64 @@ func UpdateCriterion(path string, taskID string, criterionText string, met bool)
 	}
 
 	return os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0644)
+}
+
+var priorityLineRe = regexp.MustCompile(`^\*\*Priority:\*\*\s*\d+\s*$`)
+
+// UpdatePlanPriority reads a plan file, updates/inserts/removes the priority
+// metadata line, and writes the file back. It preserves all other content exactly.
+func UpdatePlanPriority(path string, newPriority int) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return etcherr.WrapIO("reading plan file", err).WithHint("Check that the plan file exists at " + path)
+	}
+
+	lines := strings.Split(string(data), "\n")
+
+	// Find the # Plan: heading line.
+	planIdx := -1
+	for i, line := range lines {
+		if strings.HasPrefix(line, "# Plan:") {
+			planIdx = i
+			break
+		}
+	}
+	if planIdx < 0 {
+		return etcherr.IO("no # Plan: heading found in " + path).WithHint("Ensure the file is a valid etch plan")
+	}
+
+	// Find existing priority line between plan heading and next ## heading.
+	priorityIdx := -1
+	nextSectionIdx := len(lines)
+	for i := planIdx + 1; i < len(lines); i++ {
+		if strings.HasPrefix(lines[i], "## ") {
+			nextSectionIdx = i
+			break
+		}
+		if priorityLineRe.MatchString(lines[i]) {
+			priorityIdx = i
+		}
+	}
+
+	if priorityIdx >= 0 && newPriority > 0 {
+		// Replace existing line.
+		lines[priorityIdx] = fmt.Sprintf("**Priority:** %d", newPriority)
+	} else if priorityIdx < 0 && newPriority > 0 {
+		// Insert after plan heading.
+		newLine := fmt.Sprintf("**Priority:** %d", newPriority)
+		insertAt := planIdx + 1
+		lines = append(lines[:insertAt], append([]string{newLine}, lines[insertAt:]...)...)
+		_ = nextSectionIdx // not needed after insert
+	} else if priorityIdx >= 0 && newPriority == 0 {
+		// Remove the priority line.
+		lines = append(lines[:priorityIdx], lines[priorityIdx+1:]...)
+	}
+	// If priorityIdx < 0 && newPriority == 0, nothing to do.
+
+	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0644); err != nil {
+		return etcherr.WrapIO("writing plan file", err).WithHint("Check file permissions for " + path)
+	}
+	return nil
 }
 
 // TaskIDPatterns returns the heading prefixes to match for a given task ID.

@@ -630,6 +630,69 @@ func TestParse_FilesInScope(t *testing.T) {
 	}
 }
 
+func TestParse_PriorityPresent(t *testing.T) {
+	input := `# Plan: Priority Test
+**Priority:** 3
+
+## Overview
+A plan with priority.
+
+## Feature 1: Core
+
+### Task 1.1: Do stuff [pending]
+Description.
+`
+
+	plan, err := Parse(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if plan.Priority != 3 {
+		t.Errorf("priority = %d, want 3", plan.Priority)
+	}
+}
+
+func TestParse_PriorityAbsent(t *testing.T) {
+	input := `# Plan: No Priority
+
+## Feature 1: Core
+
+### Task 1.1: Do stuff [pending]
+Description.
+`
+
+	plan, err := Parse(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if plan.Priority != 0 {
+		t.Errorf("priority = %d, want 0 (default)", plan.Priority)
+	}
+}
+
+func TestParse_PriorityInsideTaskIgnored(t *testing.T) {
+	input := `# Plan: Priority In Task
+
+## Feature 1: Core
+
+### Task 1.1: Do stuff [pending]
+**Priority:** 5
+
+Some description.
+`
+
+	plan, err := Parse(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if plan.Priority != 0 {
+		t.Errorf("priority = %d, want 0 (should not parse priority from task section)", plan.Priority)
+	}
+}
+
 func assertTask(t *testing.T, task models.Task, featureNum, taskNum int, title string, status models.Status) {
 	t.Helper()
 	if task.FeatureNumber != featureNum {

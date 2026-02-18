@@ -538,7 +538,10 @@ func TestFormatSummary(t *testing.T) {
 
 	output := FormatSummary(plans)
 
-	// Check progress bar.
+	// Check priority tag and progress bar.
+	if !strings.Contains(output, "[ ]") {
+		t.Error("expected [ ] priority tag for unset priority")
+	}
 	if !strings.Contains(output, "[██████░░░░] 60%") {
 		t.Error("expected progress bar with 60%")
 	}
@@ -1167,5 +1170,153 @@ func TestFormatDetailedMultipleDeps(t *testing.T) {
 	output := FormatDetailed(ps)
 	if !strings.Contains(output, "Waiting on: Task 1.1, Task 1.2") {
 		t.Error("detailed view should show all dependencies for blocked task")
+	}
+}
+
+func TestSortPlanStatusesByPriority(t *testing.T) {
+	tests := []struct {
+		name       string
+		plans      []PlanStatus
+		wantOrder  []string
+	}{
+		{
+			name: "explicit priorities sort ascending",
+			plans: []PlanStatus{
+				{Title: "C", Priority: 3},
+				{Title: "A", Priority: 1},
+				{Title: "B", Priority: 2},
+			},
+			wantOrder: []string{"A", "B", "C"},
+		},
+		{
+			name: "unset priority sorts after explicit",
+			plans: []PlanStatus{
+				{Title: "No Priority", Priority: 0},
+				{Title: "High", Priority: 1},
+				{Title: "Low", Priority: 5},
+			},
+			wantOrder: []string{"High", "Low", "No Priority"},
+		},
+		{
+			name: "same priority uses alphabetical tiebreak",
+			plans: []PlanStatus{
+				{Title: "Zebra", Priority: 1},
+				{Title: "Apple", Priority: 1},
+				{Title: "Mango", Priority: 1},
+			},
+			wantOrder: []string{"Apple", "Mango", "Zebra"},
+		},
+		{
+			name: "mixed priorities and unset",
+			plans: []PlanStatus{
+				{Title: "Unset B", Priority: 0},
+				{Title: "Unset A", Priority: 0},
+				{Title: "Priority 2", Priority: 2},
+				{Title: "Priority 1", Priority: 1},
+			},
+			wantOrder: []string{"Priority 1", "Priority 2", "Unset A", "Unset B"},
+		},
+		{
+			name: "all unset falls back to alphabetical",
+			plans: []PlanStatus{
+				{Title: "Zebra"},
+				{Title: "Apple"},
+				{Title: "Mango"},
+			},
+			wantOrder: []string{"Apple", "Mango", "Zebra"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			SortPlanStatuses(tt.plans)
+			for i, want := range tt.wantOrder {
+				if tt.plans[i].Title != want {
+					t.Errorf("position %d: got %q, want %q", i, tt.plans[i].Title, want)
+				}
+			}
+		})
+	}
+}
+
+func TestPriorityInFormatSummary(t *testing.T) {
+	plans := []PlanStatus{
+		{
+			Title:    "Important Plan",
+			Slug:     "important",
+			Priority: 1,
+			Features: []FeatureStatus{{Number: 1, Title: "F", TotalTasks: 1, Tasks: []TaskStatus{{ID: "1.1", Title: "T", Status: models.StatusPending}}}},
+		},
+		{
+			Title:    "No Priority Plan",
+			Slug:     "no-priority",
+			Priority: 0,
+			Features: []FeatureStatus{{Number: 1, Title: "F", TotalTasks: 1, Tasks: []TaskStatus{{ID: "1.1", Title: "T", Status: models.StatusPending}}}},
+		},
+	}
+
+	output := FormatSummary(plans)
+	if !strings.Contains(output, "[1] Important Plan") {
+		t.Error("expected [1] priority tag for priority 1 plan")
+	}
+	if !strings.Contains(output, "[ ] No Priority Plan") {
+		t.Error("expected [ ] priority tag for unset priority plan")
+	}
+}
+
+func TestPriorityInFormatDetailed(t *testing.T) {
+	ps := PlanStatus{
+		Title:    "Prioritized Plan",
+		Slug:     "prioritized",
+		Priority: 3,
+		Features: []FeatureStatus{{
+			Number: 1, Title: "F", TotalTasks: 1, CompletedTasks: 0,
+			Tasks: []TaskStatus{{ID: "1.1", Title: "T", Status: models.StatusPending}},
+		}},
+	}
+
+	output := FormatDetailed(ps)
+	if !strings.Contains(output, "[3] Prioritized Plan") {
+		t.Error("expected [3] priority tag in detailed view")
+	}
+}
+
+func TestReconcilePopulatesPriority(t *testing.T) {
+	root := t.TempDir()
+	planContent := `# Plan: Priority Test
+
+**Priority:** 2
+
+## Overview
+Test plan with priority.
+
+---
+
+## Feature 1: Core
+
+### Overview
+Core feature.
+
+### Task 1.1: Setup [pending]
+**Complexity:** small
+**Files:** setup.go
+
+Do setup.
+
+**Acceptance Criteria:**
+- [ ] Done
+`
+	writePlanFile(t, root, "priority-test", planContent)
+
+	plans, err := Run(root, "priority-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(plans) != 1 {
+		t.Fatalf("expected 1 plan, got %d", len(plans))
+	}
+	if plans[0].Priority != 2 {
+		t.Errorf("expected priority 2, got %d", plans[0].Priority)
 	}
 }

@@ -19,6 +19,7 @@
 - `internal/generator/generator.go` — empty package placeholder
 - `internal/context/context.go` — empty package placeholder
 - `internal/config/config.go` — empty package placeholder
+- [18:53] Added Priority field and parser support
 
 ## Acceptance Criteria Updates
 - [x] `go build` produces a working binary

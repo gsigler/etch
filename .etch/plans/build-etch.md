@@ -78,7 +78,7 @@ Flat files. No nesting. Easy to glob, sort, and understand at a glance.
 Comments use `> 💬` blockquote syntax directly in the plan markdown:
 
 ```markdown
-### Task 1.2: Auth Endpoints [pending]
+### Task 1.2: Auth Endpoints [completed]
 
 > 💬 This should handle token rotation too. What happens on expiry?
 
@@ -129,7 +129,7 @@ This is the contract between the CLI, the AI, and the developer.
 ### Overview
 <What this feature accomplishes>
 
-### Task 1.1: <Task Title> [status]
+### Task 1.1: <Task Title> [completed]
 **Complexity:** small | medium | large
 **Files:** <comma-separated file paths or globs>
 **Depends on:** none | Task X.Y, Task X.Z

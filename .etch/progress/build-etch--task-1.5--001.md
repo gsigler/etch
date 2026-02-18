@@ -8,6 +8,7 @@
 ## Changes Made
 - internal/progress/progress.go
 - internal/progress/progress_test.go
+- [19:35] Added --priority int flag to both plan and replan commands. Priority is applied surgically via serializer.UpdatePlanPriority after the plan file is generated/replanned, only when priority > 0.
 
 ## Acceptance Criteria Updates
 - [x] Creates correctly named progress files with pre-filled template
