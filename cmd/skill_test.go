@@ -19,7 +19,7 @@ func setupSkillTest(t *testing.T) (dir string, cleanup func()) {
 	return dir, func() { os.Chdir(origDir) }
 }
 
-func TestSkillInstallCreatesFile(t *testing.T) {
+func TestSkillInstallCreatesFiles(t *testing.T) {
 	dir, cleanup := setupSkillTest(t)
 	defer cleanup()
 
@@ -28,13 +28,22 @@ func TestSkillInstallCreatesFile(t *testing.T) {
 		t.Fatalf("runSkillInstall() returned error: %v", err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(dir, ".claude", skillSubPath))
+	// Verify etch-plan skill
+	data, err := os.ReadFile(filepath.Join(dir, ".claude", "skills", "etch-plan", "SKILL.md"))
 	if err != nil {
-		t.Fatalf("expected skill file to exist: %v", err)
+		t.Fatalf("expected etch-plan skill file to exist: %v", err)
+	}
+	if string(data) != skill.Content {
+		t.Error("etch-plan skill file content does not match embedded content")
 	}
 
-	if string(data) != skill.Content {
-		t.Error("skill file content does not match embedded content")
+	// Verify etch skill
+	data, err = os.ReadFile(filepath.Join(dir, ".claude", "skills", "etch", "SKILL.md"))
+	if err != nil {
+		t.Fatalf("expected etch skill file to exist: %v", err)
+	}
+	if string(data) != skill.EtchContent {
+		t.Error("etch skill file content does not match embedded content")
 	}
 }
 
@@ -43,7 +52,7 @@ func TestSkillInstallOverwritesExisting(t *testing.T) {
 	defer cleanup()
 
 	// Create the file with old content
-	skillPath := filepath.Join(dir, ".claude", skillSubPath)
+	skillPath := filepath.Join(dir, ".claude", "skills", "etch-plan", "SKILL.md")
 	os.MkdirAll(filepath.Dir(skillPath), 0o755)
 	os.WriteFile(skillPath, []byte("old content"), 0o644)
 
@@ -67,12 +76,14 @@ func TestSkillInstallCreatesDirectories(t *testing.T) {
 		t.Fatalf("runSkillInstall() returned error: %v", err)
 	}
 
-	info, err := os.Stat(filepath.Join(dir, ".claude", "skills", "etch-plan"))
-	if err != nil {
-		t.Fatalf("expected directory to exist: %v", err)
-	}
-	if !info.IsDir() {
-		t.Error("expected .claude/skills/etch-plan to be a directory")
+	for _, subdir := range []string{"etch-plan", "etch"} {
+		info, err := os.Stat(filepath.Join(dir, ".claude", "skills", subdir))
+		if err != nil {
+			t.Fatalf("expected directory %s to exist: %v", subdir, err)
+		}
+		if !info.IsDir() {
+			t.Errorf("expected .claude/skills/%s to be a directory", subdir)
+		}
 	}
 }
 
@@ -93,7 +104,7 @@ func TestSkillFindsClaudeDirInParent(t *testing.T) {
 	}
 
 	// Should have installed in parent's .claude, not created a new one
-	data, err := os.ReadFile(filepath.Join(dir, ".claude", skillSubPath))
+	data, err := os.ReadFile(filepath.Join(dir, ".claude", "skills", "etch-plan", "SKILL.md"))
 	if err != nil {
 		t.Fatalf("expected skill file in parent .claude dir: %v", err)
 	}
@@ -126,7 +137,7 @@ func TestSkillNoClaudeDirPromptsUser(t *testing.T) {
 		t.Fatalf("runSkillInstall() returned error: %v", err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(dir, ".claude", skillSubPath))
+	data, err := os.ReadFile(filepath.Join(dir, ".claude", "skills", "etch-plan", "SKILL.md"))
 	if err != nil {
 		t.Fatalf("expected skill file to exist: %v", err)
 	}

@@ -155,9 +155,9 @@ func TestAssemble_TemplateStructure(t *testing.T) {
 		"- [ ] Old token invalidated",
 		"### Previous Sessions",
 		"None — this is session 001.",
-		"## Session Progress File",
-		"Update your progress file as you work:",
-		"Do NOT modify the plan file.",
+		"## Reporting Progress",
+		"etch progress",
+		"Do NOT modify the plan file directly",
 	}
 
 	for _, s := range requiredStrings {
@@ -980,8 +980,8 @@ func TestAssemble_InstructionRules(t *testing.T) {
 
 	rules := []string{
 		"Stay within the files listed in scope.",
-		"Do NOT modify the plan file. Only update your progress file.",
-		"Keep notes concise but useful — future sessions depend on them.",
+		"Do NOT modify the plan file directly",
+		"Log updates frequently so future sessions have context.",
 	}
 	for _, rule := range rules {
 		if !strings.Contains(ctx, rule) {

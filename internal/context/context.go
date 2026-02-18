@@ -407,24 +407,29 @@ func buildTemplate(plan *models.Plan, task *models.Task, allProgress map[string]
 		b.WriteString("\n")
 	}
 
-	// Session progress file instructions.
+	// Progress reporting instructions.
 	relProgress, _ := filepath.Rel(rootDir, progressPath)
 	if relProgress == "" {
 		relProgress = progressPath
 	}
-	b.WriteString("## Session Progress File\n\n")
-	b.WriteString(fmt.Sprintf("Update your progress file as you work:\n`%s`\n\n", relProgress))
-	b.WriteString("This file has been created for you. Fill in each section:\n")
-	b.WriteString("- **Changes Made:** files created or modified\n")
-	b.WriteString("- **Acceptance Criteria Updates:** check off what you completed\n")
-	b.WriteString("- **Decisions & Notes:** design decisions, important context\n")
-	b.WriteString("- **Blockers:** anything blocking progress\n")
-	b.WriteString("- **Next:** what still needs to happen\n")
-	b.WriteString("- **Status:** update to completed, partial, failed, or blocked\n\n")
-	b.WriteString("Rules:\n")
+	b.WriteString("## Reporting Progress\n\n")
+	b.WriteString("Use `etch progress` commands to report your work. These update both the plan file and your session progress file.\n\n")
+	b.WriteString(fmt.Sprintf("Your progress file: `%s`\n\n", relProgress))
+	b.WriteString("### Workflow\n\n")
+	b.WriteString(fmt.Sprintf("1. **Start** (already done if launched via `etch run`):\n"))
+	b.WriteString(fmt.Sprintf("   ```bash\n   etch progress start %s\n   ```\n\n", task.FullID()))
+	b.WriteString(fmt.Sprintf("2. **Log updates** as you make changes:\n"))
+	b.WriteString(fmt.Sprintf("   ```bash\n   etch progress update %s -m \"description of what you changed\"\n   ```\n\n", task.FullID()))
+	b.WriteString(fmt.Sprintf("3. **Check off criteria** as you complete them:\n"))
+	b.WriteString(fmt.Sprintf("   ```bash\n   etch progress criteria %s --check \"criterion text or substring\"\n   ```\n\n", task.FullID()))
+	b.WriteString(fmt.Sprintf("4. **When finished**, mark the task done:\n"))
+	b.WriteString(fmt.Sprintf("   ```bash\n   etch progress done %s\n   ```\n\n", task.FullID()))
+	b.WriteString("If you get blocked or the task fails:\n")
+	b.WriteString(fmt.Sprintf("```bash\netch progress block %s --reason \"why it's blocked\"\netch progress fail %s --reason \"why it failed\"\n```\n\n", task.FullID(), task.FullID()))
+	b.WriteString("### Rules\n")
 	b.WriteString("- Stay within the files listed in scope. Ask before modifying others.\n")
-	b.WriteString("- Do NOT modify the plan file. Only update your progress file.\n")
-	b.WriteString("- Keep notes concise but useful — future sessions depend on them.\n")
+	b.WriteString("- Do NOT modify the plan file directly — use `etch progress` commands instead.\n")
+	b.WriteString("- Log updates frequently so future sessions have context.\n")
 
 	return b.String()
 }

@@ -425,3 +425,234 @@ No task ID here.
 		t.Errorf("malformed file should be skipped, got %d entries", len(result))
 	}
 }
+
+// --- FindLatestSessionPath tests ---
+
+func TestFindLatestSessionPath_SingleFile(t *testing.T) {
+	dir := t.TempDir()
+	progDir := filepath.Join(dir, progressDir)
+	os.MkdirAll(progDir, 0o755)
+
+	os.WriteFile(filepath.Join(progDir, "myplan--task-1.1--001.md"), []byte("**Task:** 1.1\n"), 0o644)
+
+	path, num, err := FindLatestSessionPath(dir, "myplan", "1.1")
+	if err != nil {
+		t.Fatalf("FindLatestSessionPath() error: %v", err)
+	}
+	if num != 1 {
+		t.Errorf("session number = %d, want 1", num)
+	}
+	if filepath.Base(path) != "myplan--task-1.1--001.md" {
+		t.Errorf("path = %q, want myplan--task-1.1--001.md", filepath.Base(path))
+	}
+}
+
+func TestFindLatestSessionPath_MultipleSessions(t *testing.T) {
+	dir := t.TempDir()
+	progDir := filepath.Join(dir, progressDir)
+	os.MkdirAll(progDir, 0o755)
+
+	os.WriteFile(filepath.Join(progDir, "myplan--task-1.1--001.md"), []byte("**Task:** 1.1\n"), 0o644)
+	os.WriteFile(filepath.Join(progDir, "myplan--task-1.1--002.md"), []byte("**Task:** 1.1\n"), 0o644)
+	os.WriteFile(filepath.Join(progDir, "myplan--task-1.1--003.md"), []byte("**Task:** 1.1\n"), 0o644)
+
+	path, num, err := FindLatestSessionPath(dir, "myplan", "1.1")
+	if err != nil {
+		t.Fatalf("FindLatestSessionPath() error: %v", err)
+	}
+	if num != 3 {
+		t.Errorf("session number = %d, want 3", num)
+	}
+	if filepath.Base(path) != "myplan--task-1.1--003.md" {
+		t.Errorf("path = %q, want myplan--task-1.1--003.md", filepath.Base(path))
+	}
+}
+
+func TestFindLatestSessionPath_NoFiles(t *testing.T) {
+	dir := t.TempDir()
+	_, _, err := FindLatestSessionPath(dir, "myplan", "1.1")
+	if err == nil {
+		t.Fatal("expected error for missing session files")
+	}
+}
+
+func TestFindLatestSessionPath_LetterSuffix(t *testing.T) {
+	dir := t.TempDir()
+	progDir := filepath.Join(dir, progressDir)
+	os.MkdirAll(progDir, 0o755)
+
+	os.WriteFile(filepath.Join(progDir, "myplan--task-1.3b--001.md"), []byte("**Task:** 1.3b\n"), 0o644)
+
+	path, num, err := FindLatestSessionPath(dir, "myplan", "1.3b")
+	if err != nil {
+		t.Fatalf("FindLatestSessionPath() error: %v", err)
+	}
+	if num != 1 {
+		t.Errorf("session number = %d, want 1", num)
+	}
+	if filepath.Base(path) != "myplan--task-1.3b--001.md" {
+		t.Errorf("path = %q", filepath.Base(path))
+	}
+}
+
+// --- AppendToSection tests ---
+
+func TestAppendToSection_AddsContent(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.md")
+	initial := "# Header\n**Status:** pending\n\n## Changes Made\n<!-- placeholder -->\n\n## Next\nDo stuff\n"
+	os.WriteFile(path, []byte(initial), 0o644)
+
+	err := AppendToSection(path, "Changes Made", "- internal/foo.go")
+	if err != nil {
+		t.Fatalf("AppendToSection() error: %v", err)
+	}
+
+	data, _ := os.ReadFile(path)
+	content := string(data)
+	if !strings.Contains(content, "- internal/foo.go") {
+		t.Error("expected appended content in file")
+	}
+}
+
+func TestAppendToSection_AppendsMultiple(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.md")
+	initial := "# Header\n\n## Changes Made\n<!-- placeholder -->\n\n## Next\n"
+	os.WriteFile(path, []byte(initial), 0o644)
+
+	AppendToSection(path, "Changes Made", "- file1.go")
+	AppendToSection(path, "Changes Made", "- file2.go")
+
+	data, _ := os.ReadFile(path)
+	content := string(data)
+	if !strings.Contains(content, "- file1.go") || !strings.Contains(content, "- file2.go") {
+		t.Error("expected both appended lines")
+	}
+}
+
+func TestAppendToSection_MissingSection(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.md")
+	os.WriteFile(path, []byte("# Header\n## Other\n"), 0o644)
+
+	err := AppendToSection(path, "Nonexistent", "content")
+	if err == nil {
+		t.Fatal("expected error for missing section")
+	}
+}
+
+// --- UpdateStatus tests ---
+
+func TestUpdateStatus_ChangesStatus(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.md")
+	initial := "# Session\n**Plan:** myplan\n**Task:** 1.1\n**Session:** 001\n**Status:** pending\n\n## Changes Made\n"
+	os.WriteFile(path, []byte(initial), 0o644)
+
+	err := UpdateStatus(path, "in_progress")
+	if err != nil {
+		t.Fatalf("UpdateStatus() error: %v", err)
+	}
+
+	data, _ := os.ReadFile(path)
+	content := string(data)
+	if !strings.Contains(content, "**Status:** in_progress") {
+		t.Error("expected status to be updated to in_progress")
+	}
+	if strings.Contains(content, "**Status:** pending") {
+		t.Error("old status should be replaced")
+	}
+}
+
+func TestUpdateStatus_AllStatuses(t *testing.T) {
+	statuses := []string{"in_progress", "completed", "blocked", "failed"}
+	for _, status := range statuses {
+		t.Run(status, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "test.md")
+			os.WriteFile(path, []byte("**Status:** pending\n"), 0o644)
+
+			err := UpdateStatus(path, status)
+			if err != nil {
+				t.Fatalf("UpdateStatus(%q) error: %v", status, err)
+			}
+
+			data, _ := os.ReadFile(path)
+			expected := "**Status:** " + status
+			if !strings.Contains(string(data), expected) {
+				t.Errorf("expected %q in file", expected)
+			}
+		})
+	}
+}
+
+func TestUpdateStatus_NoStatusLine(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.md")
+	os.WriteFile(path, []byte("# No status here\n"), 0o644)
+
+	err := UpdateStatus(path, "completed")
+	if err == nil {
+		t.Fatal("expected error when no **Status:** line exists")
+	}
+}
+
+func TestUpdateStatus_FileNotFound(t *testing.T) {
+	err := UpdateStatus("/nonexistent/path.md", "completed")
+	if err == nil {
+		t.Fatal("expected error for missing file")
+	}
+}
+
+// --- UpdateCriterion tests ---
+
+func TestUpdateCriterion_ChecksOff(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.md")
+	initial := "## Acceptance Criteria Updates\n- [ ] First criterion\n- [ ] Second criterion\n"
+	os.WriteFile(path, []byte(initial), 0o644)
+
+	err := UpdateCriterion(path, "First criterion")
+	if err != nil {
+		t.Fatalf("UpdateCriterion() error: %v", err)
+	}
+
+	data, _ := os.ReadFile(path)
+	content := string(data)
+	if !strings.Contains(content, "- [x] First criterion") {
+		t.Error("expected first criterion to be checked")
+	}
+	if !strings.Contains(content, "- [ ] Second criterion") {
+		t.Error("second criterion should remain unchecked")
+	}
+}
+
+func TestUpdateCriterion_NotFound(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.md")
+	os.WriteFile(path, []byte("- [ ] Some criterion\n"), 0o644)
+
+	err := UpdateCriterion(path, "Nonexistent criterion")
+	if err == nil {
+		t.Fatal("expected error for unmatched criterion")
+	}
+}
+
+func TestUpdateCriterion_AlreadyChecked(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.md")
+	os.WriteFile(path, []byte("- [x] Already done\n"), 0o644)
+
+	err := UpdateCriterion(path, "Already done")
+	if err == nil {
+		t.Fatal("expected error since criterion is already checked (no unchecked match)")
+	}
+}
+
+func TestUpdateCriterion_FileNotFound(t *testing.T) {
+	err := UpdateCriterion("/nonexistent/path.md", "anything")
+	if err == nil {
+		t.Fatal("expected error for missing file")
+	}
+}

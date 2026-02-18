@@ -12,12 +12,10 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-const skillSubPath = "skills/etch-plan/SKILL.md"
-
 func skillCmd() *cli.Command {
 	return &cli.Command{
 		Name:  "skill",
-		Usage: "Manage the etch-plan Claude Code skill",
+		Usage: "Manage etch Claude Code skills",
 		Subcommands: []*cli.Command{
 			skillInstallCmd(),
 		},
@@ -27,7 +25,7 @@ func skillCmd() *cli.Command {
 func skillInstallCmd() *cli.Command {
 	return &cli.Command{
 		Name:  "install",
-		Usage: "Install or update the etch-plan skill in the current project",
+		Usage: "Install or update etch skills in the current project",
 		Action: func(c *cli.Context) error {
 			return runSkillInstall()
 		},
@@ -83,8 +81,20 @@ func resolveSkillDir() (string, error) {
 	return defaultDir, nil
 }
 
-func skillFilePath(claudeDir string) string {
-	return filepath.Join(claudeDir, skillSubPath)
+type skillDef struct {
+	name    string
+	subPath string
+	content string
+}
+
+var skills = []skillDef{
+	{"etch-plan", "skills/etch-plan/SKILL.md", ""},
+	{"etch", "skills/etch/SKILL.md", ""},
+}
+
+func init() {
+	skills[0].content = skill.Content
+	skills[1].content = skill.EtchContent
 }
 
 func runSkillInstall() error {
@@ -93,23 +103,25 @@ func runSkillInstall() error {
 		return err
 	}
 
-	dest := skillFilePath(claudeDir)
-	if err := writeSkillFile(dest); err != nil {
-		return err
+	for _, s := range skills {
+		dest := filepath.Join(claudeDir, s.subPath)
+		if err := writeSkillFile(dest, s.content); err != nil {
+			return err
+		}
+		fmt.Printf("✓ Installed %s skill to %s\n", s.name, dest)
 	}
 
-	fmt.Printf("✓ Installed etch-plan skill to %s\n", dest)
 	return nil
 }
 
-func writeSkillFile(dest string) error {
+func writeSkillFile(dest, content string) error {
 	dir := filepath.Dir(dest)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return etcherr.WrapIO(fmt.Sprintf("creating directory %s", dir), err).
 			WithHint("check file permissions in the current directory")
 	}
 
-	if err := os.WriteFile(dest, []byte(skill.Content), 0o644); err != nil {
+	if err := os.WriteFile(dest, []byte(content), 0o644); err != nil {
 		return etcherr.WrapIO(fmt.Sprintf("writing %s", dest), err).
 			WithHint("check file permissions in the current directory")
 	}

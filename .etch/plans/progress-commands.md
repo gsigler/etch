@@ -6,7 +6,7 @@ Add `etch progress` subcommands that let AI agents report their work on tasks pr
 
 The commands follow the existing CLI patterns: factory functions returning `*cli.Command`, task ID resolution via `etchcontext.ResolveTask`, and error handling via `etcherr.*` constructors. The progress file format and plan file surgical updates (via `serializer.UpdateTaskStatus` and `serializer.UpdateCriterion`) already exist — these commands wire them together behind a clean CLI interface.
 
-### Task 1: Add progress command scaffold and `start` subcommand [pending]
+### Task 1: Add progress command scaffold and `start` subcommand [completed]
 **Complexity:** medium
 **Files:** cmd/progress.go, cmd/root.go
 **Depends on:** (none)
@@ -21,14 +21,14 @@ The `start` subcommand:
 - Prints confirmation: `"Task <id> started (session <NNN>)"`.
 
 **Acceptance Criteria:**
-- [ ] `etch progress start <task-id>` sets plan file status to `in_progress`
-- [ ] Creates a new session file if none exists for the task
-- [ ] Reuses the latest session file if one already exists
-- [ ] Updates the progress file status to `in_progress`
-- [ ] Prints confirmation with task ID and session number
-- [ ] Fails gracefully with hint if task not found
+- [x] `etch progress start <task-id>` sets plan file status to `in_progress`
+- [x] Creates a new session file if none exists for the task
+- [x] Reuses the latest session file if one already exists
+- [x] Updates the progress file status to `in_progress`
+- [x] Prints confirmation with task ID and session number
+- [x] Fails gracefully with hint if task not found
 
-### Task 2: Add `update` and `done` subcommands [pending]
+### Task 2: Add `update` and `done` subcommands [completed]
 **Complexity:** medium
 **Files:** cmd/progress.go, internal/progress/progress.go
 **Depends on:** Task 1
@@ -54,14 +54,14 @@ Add a new exported function `progress.AppendToSection(path, sectionName, content
 - Prints: `"Task <id> completed"` (with warning if unchecked criteria).
 
 **Acceptance Criteria:**
-- [ ] `etch progress update <task-id> --message "msg"` appends timestamped entry to session file
-- [ ] `update` errors if no session file exists with helpful hint
-- [ ] `etch progress done <task-id>` sets plan and progress status to `completed`
-- [ ] `done` warns about unchecked acceptance criteria but still completes
-- [ ] `progress.FindLatestSessionPath` is exported and reusable
-- [ ] `progress.AppendToSection` is exported and reusable
+- [x] `etch progress update <task-id> --message "msg"` appends timestamped entry to session file
+- [x] `update` errors if no session file exists with helpful hint
+- [x] `etch progress done <task-id>` sets plan and progress status to `completed`
+- [x] `done` warns about unchecked acceptance criteria but still completes
+- [x] `progress.FindLatestSessionPath` is exported and reusable
+- [x] `progress.AppendToSection` is exported and reusable
 
-### Task 3: Add `criteria` subcommand [pending]
+### Task 3: Add `criteria` subcommand [completed]
 **Complexity:** medium
 **Files:** cmd/progress.go, internal/progress/progress.go
 **Depends on:** Task 1
@@ -77,14 +77,14 @@ Add the `criteria` subcommand for checking off acceptance criteria.
 - Print summary: `"Checked N/M criteria for Task <id>"`.
 
 **Acceptance Criteria:**
-- [ ] `etch progress criteria <task-id> --check "text"` marks matching criterion in plan file
-- [ ] Also marks criterion in progress file
-- [ ] Supports multiple `--check` flags in one call
-- [ ] Substring matching works when exact match fails (case-insensitive)
-- [ ] Reports which criteria matched and which didn't
-- [ ] Prints summary with count
+- [x] `etch progress criteria <task-id> --check "text"` marks matching criterion in plan file
+- [x] Also marks criterion in progress file
+- [x] Supports multiple `--check` flags in one call
+- [x] Substring matching works when exact match fails (case-insensitive)
+- [x] Reports which criteria matched and which didn't
+- [x] Prints summary with count
 
-### Task 4: Add `block` and `fail` subcommands [pending]
+### Task 4: Add `block` and `fail` subcommands [completed]
 **Complexity:** small
 **Files:** cmd/progress.go
 **Depends on:** Task 1
@@ -108,11 +108,11 @@ Add the `block` and `fail` subcommands.
 Both commands should find the latest session file (error with hint if none exists).
 
 **Acceptance Criteria:**
-- [ ] `etch progress block <task-id> --reason "text"` sets status to blocked in plan and progress
-- [ ] Block reason is appended to Blockers section
-- [ ] `etch progress fail <task-id> --reason "text"` sets status to failed in plan and progress
-- [ ] Fail reason is appended to Blockers section
-- [ ] Both error with helpful hint if no session file exists
+- [x] `etch progress block <task-id> --reason "text"` sets status to blocked in plan and progress
+- [x] Block reason is appended to Blockers section
+- [x] `etch progress fail <task-id> --reason "text"` sets status to failed in plan and progress
+- [x] Fail reason is appended to Blockers section
+- [x] Both error with helpful hint if no session file exists
 
 ### Task 5: Add progress file update helpers and tests [pending]
 **Complexity:** medium
@@ -136,7 +136,7 @@ Write tests:
 - [ ] Integration tests for start, update, done, criteria, block, fail subcommands
 - [ ] All tests pass with `go test ./...`
 
-### Task 6: Update etch skill documentation [pending]
+### Task 6: Update etch skill documentation [completed]
 **Complexity:** small
 **Files:** .claude/skills/etch-plan/SKILL.md
 **Depends on:** Task 1, Task 2, Task 3, Task 4
@@ -144,7 +144,7 @@ Write tests:
 Update the etch skill file to document the new `etch progress` commands so that AI agents know how to use them. Add a section explaining each subcommand, its arguments, flags, and expected behavior. Include examples showing the typical workflow: start → update → criteria → done.
 
 **Acceptance Criteria:**
-- [ ] SKILL.md documents all six progress subcommands
-- [ ] Includes argument and flag descriptions for each command
-- [ ] Shows example workflow from start to done
-- [ ] Explains that percentage is computed by `etch status`, not stored
+- [x] SKILL.md documents all six progress subcommands
+- [x] Includes argument and flag descriptions for each command
+- [x] Shows example workflow from start to done
+- [x] Explains that percentage is computed by `etch status`, not stored

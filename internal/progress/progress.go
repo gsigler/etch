@@ -246,6 +246,144 @@ func parseCriteria(text string) []models.Criterion {
 	return criteria
 }
 
+// FindLatestSessionPath returns the path and session number of the latest
+// progress file for a given plan and task. Returns an error if no session exists.
+func FindLatestSessionPath(rootDir, planSlug, taskID string) (string, int, error) {
+	dir := filepath.Join(rootDir, progressDir)
+	pattern := filepath.Join(dir, fmt.Sprintf("%s--task-%s--*.md", planSlug, taskID))
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return "", 0, fmt.Errorf("globbing progress files: %w", err)
+	}
+	if len(matches) == 0 {
+		return "", 0, fmt.Errorf("no session file found for task %s", taskID)
+	}
+
+	// Find the highest session number.
+	bestPath := ""
+	bestNum := 0
+	for _, m := range matches {
+		base := filepath.Base(m)
+		ext := strings.TrimSuffix(base, ".md")
+		parts := strings.Split(ext, "--")
+		if len(parts) < 3 {
+			continue
+		}
+		numStr := parts[len(parts)-1]
+		var n int
+		if _, err := fmt.Sscanf(numStr, "%d", &n); err == nil && n > bestNum {
+			bestNum = n
+			bestPath = m
+		}
+	}
+	if bestPath == "" {
+		return "", 0, fmt.Errorf("no valid session file found for task %s", taskID)
+	}
+	return bestPath, bestNum, nil
+}
+
+// AppendToSection appends a line of content to a named section (e.g. "Changes Made")
+// in a progress file. This is a surgical line-based edit that preserves existing content.
+func AppendToSection(path, sectionName, content string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("reading progress file: %w", err)
+	}
+
+	lines := strings.Split(string(data), "\n")
+	header := "## " + sectionName
+
+	// Find the section header line.
+	sectionIdx := -1
+	for i, line := range lines {
+		if strings.TrimSpace(line) == header {
+			sectionIdx = i
+			break
+		}
+	}
+	if sectionIdx < 0 {
+		return fmt.Errorf("section %q not found in %s", sectionName, filepath.Base(path))
+	}
+
+	// Find where to insert: after the header and any existing content, before the
+	// next section header or end of file. Skip HTML comment lines immediately after header.
+	insertIdx := sectionIdx + 1
+	for insertIdx < len(lines) {
+		trimmed := strings.TrimSpace(lines[insertIdx])
+		if strings.HasPrefix(trimmed, "## ") {
+			break
+		}
+		insertIdx++
+	}
+
+	// Back up past trailing blank lines to insert content right before them.
+	for insertIdx > sectionIdx+1 && strings.TrimSpace(lines[insertIdx-1]) == "" {
+		insertIdx--
+	}
+
+	// Insert the new content line.
+	newLines := make([]string, 0, len(lines)+1)
+	newLines = append(newLines, lines[:insertIdx]...)
+	newLines = append(newLines, content)
+	newLines = append(newLines, lines[insertIdx:]...)
+
+	return os.WriteFile(path, []byte(strings.Join(newLines, "\n")), 0644)
+}
+
+// UpdateCriterion marks a criterion as checked in a progress file's
+// "Acceptance Criteria Updates" section. It matches by exact criterion description.
+func UpdateCriterion(path, criterionText string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("reading progress file: %w", err)
+	}
+
+	lines := strings.Split(string(data), "\n")
+	found := false
+
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "- [ ] ") {
+			desc := strings.TrimPrefix(trimmed, "- [ ] ")
+			if desc == criterionText {
+				lines[i] = strings.Replace(line, "- [ ] ", "- [x] ", 1)
+				found = true
+				break
+			}
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("criterion %q not found in progress file", criterionText)
+	}
+
+	return os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0644)
+}
+
+// UpdateStatus surgically replaces the **Status:** line in a progress file.
+func UpdateStatus(path string, newStatus string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("reading progress file: %w", err)
+	}
+
+	lines := strings.Split(string(data), "\n")
+	found := false
+	for i, line := range lines {
+		if strings.HasPrefix(line, "**Status:**") {
+			lines[i] = "**Status:** " + newStatus
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("no **Status:** line found in %s", filepath.Base(path))
+	}
+
+	return os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0644)
+}
+
 func stripComments(text string) string {
 	var lines []string
 	for _, line := range strings.Split(text, "\n") {

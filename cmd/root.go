@@ -37,6 +37,7 @@ func Execute() (bool, error) {
 			openCmd(),
 			deleteCmd(),
 			skillCmd(),
+			progressCmd(),
 		},
 	}
 
