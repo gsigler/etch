@@ -45,6 +45,14 @@ func runInit() error {
 		}
 	}
 
+	// Auto-install skills into .claude/skills/
+	claudeDir := ".claude"
+	if err := installSkillsTo(claudeDir); err != nil {
+		return etcherr.WrapIO("installing skills", err).
+			WithHint("you can install skills manually with 'etch skill install'")
+	}
+	fmt.Println("✓ Skills installed")
+
 	// Ask about git tracking for progress files
 	trackProgress := askYesNo("Track progress files in git? (y/N)")
 

@@ -26,7 +26,8 @@ Examples:
   etch replan --target 1.2               → replan Task 1.2
   etch replan --target feature:2         → replan Feature 2
   etch replan --target "Login System"    → replan feature by title
-  etch replan -p my-plan --target 1.2    → replan task 1.2 in specific plan`,
+  etch replan -p my-plan --target 1.2    → replan task 1.2 in specific plan
+  etch replan -r "tasks are too granular" → replan with a reason for context`,
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:    "plan",
@@ -36,6 +37,11 @@ Examples:
 			&cli.StringFlag{
 				Name:  "target",
 				Usage: "replan target: task ID (1.2), feature (feature:2), or feature title",
+			},
+			&cli.StringFlag{
+				Name:    "reason",
+				Aliases: []string{"r"},
+				Usage:   "reason for replanning (included in prompt for context)",
 			},
 			&cli.IntFlag{
 				Name:  "priority",
@@ -142,6 +148,10 @@ Examples:
 					string(planContent),
 					plan.FilePath,
 				)
+			}
+
+			if reason := c.String("reason"); reason != "" {
+				prompt += fmt.Sprintf("\n\n**Reason for replanning:** %s", reason)
 			}
 
 			fmt.Println("Launching Claude Code to replan...")

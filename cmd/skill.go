@@ -114,6 +114,18 @@ func runSkillInstall() error {
 	return nil
 }
 
+// installSkillsTo installs all skills into the given .claude directory
+// without interactive prompts. Used by etch init.
+func installSkillsTo(claudeDir string) error {
+	for _, s := range skills {
+		dest := filepath.Join(claudeDir, s.subPath)
+		if err := writeSkillFile(dest, s.content); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func writeSkillFile(dest, content string) error {
 	dir := filepath.Dir(dest)
 	if err := os.MkdirAll(dir, 0o755); err != nil {

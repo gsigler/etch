@@ -18,7 +18,7 @@ func Run(prompt, workDir string) error {
 			WithHint("install Claude Code: https://docs.anthropic.com/en/docs/claude-code")
 	}
 
-	cmd := exec.Command(path, "-p", prompt)
+	cmd := exec.Command(path, prompt)
 	cmd.Dir = workDir
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout

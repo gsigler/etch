@@ -34,9 +34,13 @@ func planCmd() *cli.Command {
 		},
 		Action: func(c *cli.Context) error {
 			description := strings.Join(c.Args().Slice(), " ")
+			if c.String("name") == "" {
+				return etcherr.Usage("missing required --name flag").
+					WithHint("usage: etch plan --name auth-system \"add user authentication\"")
+			}
 			if description == "" {
 				return etcherr.Usage("missing feature description").
-					WithHint("usage: etch plan \"add user authentication\"")
+					WithHint("usage: etch plan --name auth-system \"add user authentication\"")
 			}
 
 			rootDir, err := findProjectRoot()
@@ -50,13 +54,7 @@ func planCmd() *cli.Command {
 			}
 			_ = cfg // loaded for slug generation; no API key needed
 
-			// Determine slug: use --name flag if provided, otherwise derive from description.
-			var slug string
-			if name := c.String("name"); name != "" {
-				slug = generator.Slugify(name)
-			} else {
-				slug = generator.Slugify(description)
-			}
+			slug := generator.Slugify(c.String("name"))
 			if generator.SlugExists(rootDir, slug) {
 				newSlug, _ := generator.ResolveSlug(rootDir, slug)
 				fmt.Printf("Plan '%s' already exists. Create '%s'? Or did you mean `etch replan %s`?\n", slug, newSlug, slug)

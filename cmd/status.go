@@ -20,7 +20,7 @@ func statusCmd() *cli.Command {
 			},
 			&cli.BoolFlag{
 				Name:  "all",
-				Usage: "show all plans including fully pending and completed",
+				Usage: "show all plans including completed",
 			},
 		},
 		Action: func(c *cli.Context) error {
@@ -56,7 +56,7 @@ func statusCmd() *cli.Command {
 			if planFilter != "" && len(plans) == 1 {
 				fmt.Print(status.FormatDetailed(plans[0]))
 			} else if len(plans) == 0 && !showAll {
-				fmt.Println("No active plans. Use --all to see all plans.")
+				fmt.Println("No active plans. Use --all to see completed plans.")
 			} else {
 				fmt.Print(status.FormatSummary(plans))
 			}
