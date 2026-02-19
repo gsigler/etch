@@ -22,24 +22,16 @@ type PlanStatus struct {
 	Slug           string          `json:"slug"`
 	FilePath       string          `json:"file_path"`
 	Priority       int             `json:"priority"`
+	PlanCompleted  bool            `json:"plan_completed"`
 	Features       []FeatureStatus `json:"features"`
 	CompletedTasks int             `json:"completed_tasks"`
 	TotalTasks     int             `json:"total_tasks"`
 }
 
-// IsActive returns true if the plan has at least one in-progress, failed, or blocked task,
-// or is partially completed (some but not all tasks done). Fully pending and fully completed
-// plans are not considered active.
+// IsActive returns true unless the plan is fully completed (all tasks done).
+// Not-started plans (0% complete) and partially completed plans are considered active.
 func (ps PlanStatus) IsActive() bool {
-	for _, f := range ps.Features {
-		for _, t := range f.Tasks {
-			if t.Status == models.StatusInProgress || t.Status == models.StatusFailed || t.Status == models.StatusBlocked {
-				return true
-			}
-		}
-	}
-	// Partially completed: some done but not all.
-	return ps.CompletedTasks > 0 && ps.CompletedTasks < ps.TotalTasks
+	return ps.CompletedTasks < ps.TotalTasks
 }
 
 // Percentage returns the overall completion percentage for the plan.
@@ -207,6 +199,20 @@ func reconcile(plan *models.Plan, progressMap map[string][]models.SessionProgres
 	// Resolve blocked status: a pending task is blocked if any dependency is not completed.
 	resolveBlocked(&ps)
 
+	// Auto-detect plan completion: if all tasks are completed, mark the plan as done.
+	if ps.CompletedTasks == ps.TotalTasks && ps.TotalTasks > 0 {
+		ps.PlanCompleted = true
+		if plan.Status != models.StatusCompleted {
+			plan.Status = models.StatusCompleted
+			if err := serializer.UpdatePlanStatus(plan.FilePath, models.StatusCompleted); err != nil {
+				return ps, etcherr.WrapIO("updating plan completion status", err)
+			}
+		}
+	} else if plan.Status == models.StatusCompleted {
+		// Plan was previously marked completed but tasks are no longer all done.
+		ps.PlanCompleted = true
+	}
+
 	_ = changed // tracking for potential future use
 	return ps, nil
 }
@@ -275,7 +281,7 @@ func mapProgressStatus(progressStatus string) models.Status {
 	switch progressStatus {
 	case "completed":
 		return models.StatusCompleted
-	case "partial":
+	case "partial", "in_progress":
 		return models.StatusInProgress
 	case "failed":
 		return models.StatusFailed
@@ -327,7 +333,11 @@ func FormatSummary(plans []PlanStatus) string {
 		if p.Priority > 0 {
 			priorityTag = fmt.Sprintf("[%d]", p.Priority)
 		}
-		b.WriteString(fmt.Sprintf("📋 %s %s  %s\n", priorityTag, p.Title, progressBar(pct)))
+		planIcon := "📋"
+		if p.PlanCompleted {
+			planIcon = "✓"
+		}
+		b.WriteString(fmt.Sprintf("%s %s %s  %s\n", planIcon, priorityTag, p.Title, progressBar(pct)))
 		b.WriteString(fmt.Sprintf("  slug: %s\n", p.Slug))
 
 		for _, f := range p.Features {
@@ -356,7 +366,11 @@ func FormatDetailed(ps PlanStatus) string {
 	if ps.Priority > 0 {
 		priorityTag = fmt.Sprintf("[%d]", ps.Priority)
 	}
-	b.WriteString(fmt.Sprintf("📋 %s %s  %s\n", priorityTag, ps.Title, progressBar(pct)))
+	planIcon := "📋"
+	if ps.PlanCompleted {
+		planIcon = "✓"
+	}
+	b.WriteString(fmt.Sprintf("%s %s %s  %s\n", planIcon, priorityTag, ps.Title, progressBar(pct)))
 	b.WriteString(fmt.Sprintf("  slug: %s\n\n", ps.Slug))
 
 	for _, f := range ps.Features {

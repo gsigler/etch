@@ -296,9 +296,9 @@ func TestIsActive(t *testing.T) {
 		active bool
 	}{
 		{
-			name:   "fully pending is not active",
+			name:   "fully pending is active",
 			ps:     PlanStatus{CompletedTasks: 0, TotalTasks: 3, Features: []FeatureStatus{{Tasks: []TaskStatus{{Status: models.StatusPending}}}}},
-			active: false,
+			active: true,
 		},
 		{
 			name:   "fully completed is not active",
@@ -343,11 +343,14 @@ func TestFilterActive(t *testing.T) {
 	}
 
 	active := FilterActive(plans)
-	if len(active) != 1 {
-		t.Fatalf("expected 1 active plan, got %d", len(active))
+	if len(active) != 2 {
+		t.Fatalf("expected 2 active plans, got %d", len(active))
 	}
 	if active[0].Title != "Active" {
-		t.Errorf("expected Active plan, got %s", active[0].Title)
+		t.Errorf("expected Active plan first, got %s", active[0].Title)
+	}
+	if active[1].Title != "Pending" {
+		t.Errorf("expected Pending plan second, got %s", active[1].Title)
 	}
 }
 
@@ -750,6 +753,7 @@ func TestMapProgressStatus(t *testing.T) {
 	}{
 		{"completed", models.StatusCompleted},
 		{"partial", models.StatusInProgress},
+		{"in_progress", models.StatusInProgress},
 		{"failed", models.StatusFailed},
 		{"blocked", models.StatusBlocked},
 		{"pending", models.StatusPending},
@@ -1236,6 +1240,117 @@ func TestSortPlanStatusesByPriority(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestAutoCompletePlan(t *testing.T) {
+	root := t.TempDir()
+	planContent := `# Plan: Small Plan
+
+## Overview
+A small plan with two tasks.
+
+---
+
+## Feature 1: Core
+
+### Overview
+Core feature.
+
+### Task 1.1: First [pending]
+**Complexity:** small
+**Files:** a.go
+
+Do first thing.
+
+**Acceptance Criteria:**
+- [ ] Done
+
+### Task 1.2: Second [pending]
+**Complexity:** small
+**Files:** b.go
+
+Do second thing.
+
+**Acceptance Criteria:**
+- [ ] Done
+`
+	planPath := writePlanFile(t, root, "small-plan", planContent)
+
+	// Complete both tasks.
+	writeProgressFile(t, root, "small-plan", "1.1", 1, "completed", []string{"- [x] Done"})
+	writeProgressFile(t, root, "small-plan", "1.2", 1, "completed", []string{"- [x] Done"})
+
+	plans, err := Run(root, "small-plan")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(plans) != 1 {
+		t.Fatalf("expected 1 plan, got %d", len(plans))
+	}
+
+	if !plans[0].PlanCompleted {
+		t.Error("expected PlanCompleted to be true when all tasks are completed")
+	}
+
+	// Verify plan file was updated with [completed] on the title.
+	data, _ := os.ReadFile(planPath)
+	if !strings.Contains(string(data), "# Plan: Small Plan [completed]") {
+		t.Errorf("expected plan title to have [completed], got: %s", strings.Split(string(data), "\n")[0])
+	}
+}
+
+func TestAutoCompleteDoesNotTriggerOnPartial(t *testing.T) {
+	root := t.TempDir()
+	writePlanFile(t, root, "auth", testPlan)
+
+	// Only complete one of three tasks.
+	writeProgressFile(t, root, "auth", "1.1", 1, "completed", []string{
+		"- [x] Migration file created",
+		"- [x] Indexes added",
+	})
+
+	plans, err := Run(root, "auth")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if plans[0].PlanCompleted {
+		t.Error("PlanCompleted should be false when not all tasks are completed")
+	}
+
+	// Verify plan file does NOT have [completed] on the title.
+	data, _ := os.ReadFile(filepath.Join(root, ".etch", "plans", "auth.md"))
+	if strings.Contains(string(data), "# Plan: Auth System [completed]") {
+		t.Error("plan title should not have [completed] when tasks are incomplete")
+	}
+}
+
+func TestCompletedPlanShowsCheckIcon(t *testing.T) {
+	plans := []PlanStatus{
+		{
+			Title:          "Done Plan",
+			Slug:           "done-plan",
+			PlanCompleted:  true,
+			CompletedTasks: 2,
+			TotalTasks:     2,
+			Features: []FeatureStatus{{
+				Number: 1, Title: "F", CompletedTasks: 2, TotalTasks: 2,
+				Tasks: []TaskStatus{
+					{ID: "1.1", Title: "A", Status: models.StatusCompleted},
+					{ID: "1.2", Title: "B", Status: models.StatusCompleted},
+				},
+			}},
+		},
+	}
+
+	output := FormatSummary(plans)
+	if !strings.Contains(output, "✓") {
+		t.Error("completed plan should show ✓ icon")
+	}
+	if strings.Contains(output, "📋") {
+		t.Error("completed plan should not show 📋 icon")
 	}
 }
 
