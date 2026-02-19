@@ -18,6 +18,11 @@ func Serialize(plan *models.Plan) string {
 
 	b.WriteString("# Plan: ")
 	b.WriteString(plan.Title)
+	if plan.Status != "" {
+		b.WriteString(" [")
+		b.WriteString(string(plan.Status))
+		b.WriteString("]")
+	}
 	b.WriteString("\n")
 
 	if plan.Priority > 0 {
@@ -219,6 +224,36 @@ func UpdateCriterion(path string, taskID string, criterionText string, met bool)
 
 	if !found {
 		return fmt.Errorf("criterion %q not found in task %s", criterionText, taskID)
+	}
+
+	return os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0644)
+}
+
+var planHeadingRe = regexp.MustCompile(`^(#\s+Plan:\s*.+?)(?:\s*\[(\w+)\])?\s*$`)
+
+// UpdatePlanStatus reads a plan file, updates or adds the status tag on the
+// plan heading line (e.g. "# Plan: Title [completed]"), and writes the file back.
+func UpdatePlanStatus(path string, newStatus models.Status) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("reading plan file: %w", err)
+	}
+
+	lines := strings.Split(string(data), "\n")
+	found := false
+
+	for i, line := range lines {
+		if m := planHeadingRe.FindStringSubmatchIndex(line); m != nil {
+			// m[2]:m[3] is the title part (group 1), m[4]:m[5] is the status (group 2, may be -1)
+			title := line[m[2]:m[3]]
+			lines[i] = title + " [" + string(newStatus) + "]"
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("plan heading not found in %s", path)
 	}
 
 	return os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0644)

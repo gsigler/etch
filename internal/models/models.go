@@ -55,6 +55,7 @@ type Plan struct {
 	Title    string    `json:"title"`
 	Overview string    `json:"overview"`
 	Priority int       `json:"priority"`
+	Status   Status    `json:"status,omitempty"`
 	Features []Feature `json:"features"`
 	FilePath string    `json:"file_path"`
 	Slug     string    `json:"slug"`

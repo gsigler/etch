@@ -152,7 +152,13 @@ func Parse(r io.Reader) (*models.Plan, error) {
 		// Check for # Plan: heading.
 		if m := planHeadingRe.FindStringSubmatch(line); m != nil {
 			flush()
-			plan.Title = strings.TrimSpace(m[1])
+			title := strings.TrimSpace(m[1])
+			// Extract optional status tag from plan title (e.g. "My Plan [completed]").
+			if sm := statusTagRe.FindStringSubmatch(title); sm != nil {
+				plan.Status = models.ParseStatus(sm[1])
+				title = strings.TrimSpace(statusTagRe.ReplaceAllString(title, ""))
+			}
+			plan.Title = title
 			cur = statePlanLevel
 			continue
 		}

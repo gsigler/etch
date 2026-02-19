@@ -708,3 +708,58 @@ func assertTask(t *testing.T, task models.Task, featureNum, taskNum int, title s
 		t.Errorf("task %d.%d status = %q, want %q", featureNum, taskNum, task.Status, status)
 	}
 }
+
+func TestParsePlanStatus(t *testing.T) {
+	tests := []struct {
+		name       string
+		input      string
+		wantTitle  string
+		wantStatus models.Status
+	}{
+		{
+			name: "no status tag",
+			input: `# Plan: My Plan
+
+### Task 1: Do something [pending]
+Description.
+`,
+			wantTitle:  "My Plan",
+			wantStatus: "",
+		},
+		{
+			name: "completed status tag",
+			input: `# Plan: My Plan [completed]
+
+### Task 1: Do something [completed]
+Description.
+`,
+			wantTitle:  "My Plan",
+			wantStatus: models.StatusCompleted,
+		},
+		{
+			name: "in_progress status tag",
+			input: `# Plan: My Plan [in_progress]
+
+### Task 1: Do something [in_progress]
+Description.
+`,
+			wantTitle:  "My Plan",
+			wantStatus: models.StatusInProgress,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			plan, err := Parse(strings.NewReader(tt.input))
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if plan.Title != tt.wantTitle {
+				t.Errorf("title = %q, want %q", plan.Title, tt.wantTitle)
+			}
+			if plan.Status != tt.wantStatus {
+				t.Errorf("status = %q, want %q", plan.Status, tt.wantStatus)
+			}
+		})
+	}
+}
