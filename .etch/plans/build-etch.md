@@ -1,4 +1,4 @@
-# Plan: Build Etch – AI Implementation Planning CLI
+# Plan: Build Etch – AI Implementation Planning CLI [completed]
 
 ## Overview
 

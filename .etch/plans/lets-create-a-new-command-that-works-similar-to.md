@@ -1,4 +1,4 @@
-# Plan: Add `etch run` Command to Launch Claude with Context
+# Plan: Add `etch run` Command to Launch Claude with Context [completed]
 
 ## Overview
 

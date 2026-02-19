@@ -1,4 +1,4 @@
-# Plan: Enhance Status Command
+# Plan: Enhance Status Command [completed]
 
 ## Overview
 

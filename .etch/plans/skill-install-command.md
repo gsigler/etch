@@ -1,4 +1,4 @@
-# Plan: Etch Skill Install & Update Commands
+# Plan: Etch Skill Install & Update Commands [completed]
 
 ## Overview
 

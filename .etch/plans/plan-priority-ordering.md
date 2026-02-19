@@ -1,4 +1,4 @@
-# Plan: Plan Priority Ordering
+# Plan: Plan Priority Ordering [completed]
 
 ## Overview
 

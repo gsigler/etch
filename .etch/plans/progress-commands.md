@@ -1,4 +1,4 @@
-# Plan: Progress Commands
+# Plan: Progress Commands [completed]
 
 ## Overview
 

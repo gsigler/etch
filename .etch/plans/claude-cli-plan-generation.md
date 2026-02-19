@@ -1,4 +1,4 @@
-# Plan: Replace API Calls with Claude Code CLI for Plan Generation
+# Plan: Replace API Calls with Claude Code CLI for Plan Generation [completed]
 
 ## Overview
 
