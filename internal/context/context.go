@@ -25,6 +25,14 @@ type Result struct {
 	TokenEstimate int
 }
 
+// FeatureResult holds the output of assembling a feature-level context prompt.
+type FeatureResult struct {
+	ContextPath   string
+	ProgressPaths map[string]string // task ID → progress file path
+	SessionNum    int
+	TokenEstimate int
+}
+
 // DiscoverPlans finds all plan files in the project root.
 func DiscoverPlans(rootDir string) ([]*models.Plan, error) {
 	dir := filepath.Join(rootDir, plansDir)
@@ -51,6 +59,82 @@ func DiscoverPlans(rootDir string) ([]*models.Plan, error) {
 			WithHint("check that plan files in .etch/plans/ follow the expected markdown format")
 	}
 	return plans, nil
+}
+
+// ResolveFeature resolves a feature by number within a plan identified by slug.
+func ResolveFeature(plans []*models.Plan, planSlug string, featureNumber int) (*models.Plan, *models.Feature, error) {
+	// Filter to specific plan if slug given.
+	var candidates []*models.Plan
+	if planSlug != "" {
+		for _, p := range plans {
+			if p.Slug == planSlug {
+				candidates = append(candidates, p)
+			}
+		}
+		if len(candidates) == 0 {
+			return nil, nil, etcherr.Project(fmt.Sprintf("no plan found with slug %q", planSlug)).
+				WithHint("run 'etch list' to see available plans")
+		}
+	} else {
+		candidates = plans
+	}
+
+	for _, plan := range candidates {
+		for i := range plan.Features {
+			if plan.Features[i].Number == featureNumber {
+				return plan, &plan.Features[i], nil
+			}
+		}
+	}
+
+	return nil, nil, etcherr.Project(fmt.Sprintf("feature %d not found", featureNumber)).
+		WithHint("run 'etch status' to see available features")
+}
+
+// featurePendingTasks returns the ordered list of pending tasks in a feature
+// whose dependencies are satisfied or are within the feature itself, skipping
+// completed tasks.
+func featurePendingTasks(plan *models.Plan, feature *models.Feature, allProgress map[string][]models.SessionProgress) []*models.Task {
+	// Build set of task IDs within this feature for intra-feature dep checking.
+	featureTaskIDs := make(map[string]bool)
+	for _, t := range feature.Tasks {
+		featureTaskIDs[t.FullID()] = true
+	}
+
+	var result []*models.Task
+	for i := range feature.Tasks {
+		task := &feature.Tasks[i]
+		status := effectiveStatus(task, allProgress)
+		if status != models.StatusPending {
+			continue
+		}
+		if featureDepsReady(plan, task, featureTaskIDs, allProgress) {
+			result = append(result, task)
+		}
+	}
+	return result
+}
+
+// featureDepsReady checks if a task's dependencies are satisfied for feature-level
+// execution. A dependency is satisfied if it's completed, or if it belongs to the
+// same feature (intra-feature deps are allowed since the feature runs as a group).
+func featureDepsReady(plan *models.Plan, task *models.Task, featureTaskIDs map[string]bool, allProgress map[string][]models.SessionProgress) bool {
+	for _, dep := range task.DependsOn {
+		depID := extractTaskID(dep)
+		// Intra-feature dependencies are considered satisfied.
+		if featureTaskIDs[depID] {
+			continue
+		}
+		depTask := plan.TaskByID(depID)
+		if depTask == nil {
+			continue
+		}
+		status := effectiveStatus(depTask, allProgress)
+		if status != models.StatusCompleted {
+			return false
+		}
+	}
+	return true
 }
 
 // ResolveTask resolves a task from the given arguments.
@@ -258,6 +342,257 @@ func Assemble(rootDir string, plan *models.Plan, task *models.Task) (Result, err
 		SessionNum:    sessionNum,
 		TokenEstimate: tokenEstimate,
 	}, nil
+}
+
+// AssembleFeature builds a combined context prompt for all actionable tasks in a feature.
+func AssembleFeature(rootDir string, plan *models.Plan, feature *models.Feature) (FeatureResult, error) {
+	allProgress, err := progress.ReadAll(rootDir, plan.Slug)
+	if err != nil {
+		allProgress = make(map[string][]models.SessionProgress)
+	}
+
+	tasks := featurePendingTasks(plan, feature, allProgress)
+	if len(tasks) == 0 {
+		return FeatureResult{}, etcherr.Project("no actionable pending tasks in feature").
+			WithHint("all tasks may be completed or have unsatisfied external dependencies — run 'etch status' to check")
+	}
+
+	// Create progress files for each pending task.
+	progressPaths := make(map[string]string, len(tasks))
+	var sessionNum int
+	for _, task := range tasks {
+		pPath, err := progress.WriteSession(rootDir, plan, task)
+		if err != nil {
+			return FeatureResult{}, etcherr.WrapIO(fmt.Sprintf("creating progress file for task %s", task.FullID()), err)
+		}
+		progressPaths[task.FullID()] = pPath
+		n := sessionNumberFromPath(pPath)
+		if n > sessionNum {
+			sessionNum = n
+		}
+	}
+
+	// Build combined context content.
+	content := buildFeatureTemplate(plan, feature, tasks, allProgress, sessionNum, progressPaths, rootDir)
+
+	// Write context file.
+	ctxDir := filepath.Join(rootDir, contextDir)
+	if err := os.MkdirAll(ctxDir, 0o755); err != nil {
+		return FeatureResult{}, etcherr.WrapIO("creating context dir", err)
+	}
+
+	ctxFilename := fmt.Sprintf("%s--feature-%d--%03d.md", plan.Slug, feature.Number, sessionNum)
+	ctxPath := filepath.Join(ctxDir, ctxFilename)
+	if err := os.WriteFile(ctxPath, []byte(content), 0o644); err != nil {
+		return FeatureResult{}, etcherr.WrapIO("writing context file", err)
+	}
+
+	tokenEstimate := len(content) * 10 / 35
+
+	return FeatureResult{
+		ContextPath:   ctxPath,
+		ProgressPaths: progressPaths,
+		SessionNum:    sessionNum,
+		TokenEstimate: tokenEstimate,
+	}, nil
+}
+
+func buildFeatureTemplate(plan *models.Plan, feature *models.Feature, tasks []*models.Task, allProgress map[string][]models.SessionProgress, sessionNum int, progressPaths map[string]string, rootDir string) string {
+	var b strings.Builder
+
+	// Header.
+	b.WriteString("# Etch Context — Feature Implementation\n\n")
+	b.WriteString("You are working on an entire feature as part of an implementation plan managed by Etch.\n")
+	b.WriteString("Work through the tasks in order, completing each one before moving to the next.\n\n")
+
+	// Plan section.
+	b.WriteString(fmt.Sprintf("## Plan: %s\n", plan.Title))
+	overview := condenseOverview(plan.Overview)
+	if overview != "" {
+		b.WriteString(overview + "\n")
+	}
+	b.WriteString("\n")
+
+	// Current plan state.
+	b.WriteString("## Current Plan State\n")
+	for _, f := range plan.Features {
+		b.WriteString(fmt.Sprintf("Feature %d: %s\n", f.Number, f.Title))
+		for _, t := range f.Tasks {
+			status := effectiveStatus(&t, allProgress)
+			icon := status.Icon()
+			annotation := formatFeatureTaskAnnotation(&t, feature, tasks, status)
+			b.WriteString(fmt.Sprintf("  %s Task %s: %s %s\n", icon, t.FullID(), t.Title, annotation))
+		}
+	}
+	b.WriteString("\n")
+
+	// Your Feature section — summary of all tasks being worked on.
+	b.WriteString(fmt.Sprintf("## Your Feature: Feature %d — %s\n\n", feature.Number, feature.Title))
+	b.WriteString(fmt.Sprintf("You are working on **%d tasks** in this feature. Complete them in order.\n\n", len(tasks)))
+	for i, task := range tasks {
+		b.WriteString(fmt.Sprintf("  %d. **Task %s** — %s", i+1, task.FullID(), task.Title))
+		if len(task.Files) > 0 {
+			b.WriteString(fmt.Sprintf(" (`%s`)", strings.Join(task.Files, "`, `")))
+		}
+		b.WriteString("\n")
+	}
+	b.WriteString("\n---\n\n")
+
+	// Full details for each task.
+	for i, task := range tasks {
+		b.WriteString(fmt.Sprintf("## Task %d of %d: Task %s — %s\n", i+1, len(tasks), task.FullID(), task.Title))
+		if task.Complexity != "" {
+			b.WriteString(fmt.Sprintf("**Complexity:** %s\n", task.Complexity))
+		}
+		if len(task.Files) > 0 {
+			b.WriteString(fmt.Sprintf("**Files in Scope:** %s\n", strings.Join(task.Files, ", ")))
+		}
+		if len(task.DependsOn) > 0 {
+			depParts := make([]string, len(task.DependsOn))
+			for j, dep := range task.DependsOn {
+				depID := extractTaskID(dep)
+				depTask := plan.TaskByID(depID)
+				if depTask != nil {
+					status := effectiveStatus(depTask, allProgress)
+					depParts[j] = fmt.Sprintf("%s (%s)", dep, status)
+				} else {
+					depParts[j] = dep
+				}
+			}
+			b.WriteString(fmt.Sprintf("**Depends on:** %s\n", strings.Join(depParts, ", ")))
+		}
+		b.WriteString("\n")
+
+		if task.Description != "" {
+			b.WriteString(task.Description + "\n\n")
+		}
+
+		// Acceptance criteria.
+		if len(task.Criteria) > 0 {
+			b.WriteString("### Acceptance Criteria\n")
+			criteriaMap := make(map[string]bool)
+			sessions := allProgress[task.FullID()]
+			for _, s := range sessions {
+				for _, c := range s.CriteriaUpdates {
+					if c.IsMet {
+						criteriaMap[c.Description] = true
+					}
+				}
+			}
+			for _, c := range task.Criteria {
+				check := " "
+				if c.IsMet || criteriaMap[c.Description] {
+					check = "x"
+				}
+				b.WriteString(fmt.Sprintf("- [%s] %s\n", check, c.Description))
+			}
+			b.WriteString("\n")
+		}
+
+		// Comments.
+		if len(task.Comments) > 0 {
+			b.WriteString("### Review Comments\n")
+			for _, c := range task.Comments {
+				b.WriteString(fmt.Sprintf("> 💬 %s\n\n", c))
+			}
+		}
+
+		// Previous sessions for this task.
+		sessions := allProgress[task.FullID()]
+		var priorSessions []models.SessionProgress
+		for _, s := range sessions {
+			if s.SessionNumber < sessionNum {
+				priorSessions = append(priorSessions, s)
+			}
+		}
+		if len(priorSessions) > 0 {
+			b.WriteString("### Previous Sessions\n")
+			for _, s := range priorSessions {
+				b.WriteString(fmt.Sprintf("\n**Session %03d (%s, %s):**\n", s.SessionNumber, s.Started, s.Status))
+				if len(s.ChangesMade) > 0 {
+					b.WriteString(fmt.Sprintf("Changes: %s\n", strings.Join(s.ChangesMade, ", ")))
+				}
+				if s.Decisions != "" {
+					b.WriteString(fmt.Sprintf("Decisions: %s\n", s.Decisions))
+				}
+				if s.Blockers != "" {
+					b.WriteString(fmt.Sprintf("Blockers: %s\n", s.Blockers))
+				}
+				if s.Next != "" {
+					b.WriteString(fmt.Sprintf("Next: %s\n", s.Next))
+				}
+			}
+			b.WriteString("\n")
+		}
+
+		// Per-task progress reporting.
+		relProgress, _ := filepath.Rel(rootDir, progressPaths[task.FullID()])
+		if relProgress == "" {
+			relProgress = progressPaths[task.FullID()]
+		}
+		b.WriteString(fmt.Sprintf("### Progress for Task %s\n\n", task.FullID()))
+		b.WriteString(fmt.Sprintf("Progress file: `%s`\n\n", relProgress))
+		b.WriteString(fmt.Sprintf("```bash\n"))
+		b.WriteString(fmt.Sprintf("etch progress start -p %s -t %s\n", plan.Slug, task.FullID()))
+		b.WriteString(fmt.Sprintf("etch progress update -p %s -t %s -m \"description\"\n", plan.Slug, task.FullID()))
+		b.WriteString(fmt.Sprintf("etch progress criteria -p %s -t %s --check \"criterion text\"\n", plan.Slug, task.FullID()))
+		b.WriteString(fmt.Sprintf("etch progress done -p %s -t %s\n", plan.Slug, task.FullID()))
+		b.WriteString("```\n\n")
+
+		if i < len(tasks)-1 {
+			b.WriteString("---\n\n")
+		}
+	}
+
+	// General workflow instructions.
+	b.WriteString("\n## Workflow\n\n")
+	b.WriteString("Work through the tasks **in order** (Task 1 first, then Task 2, etc.).\n")
+	b.WriteString("For each task:\n\n")
+	b.WriteString("1. Run `etch progress start` for the task\n")
+	b.WriteString("2. Implement the changes described\n")
+	b.WriteString("3. Log updates with `etch progress update` as you work\n")
+	b.WriteString("4. Check off criteria with `etch progress criteria --check`\n")
+	b.WriteString("5. Mark the task done with `etch progress done`\n")
+	b.WriteString("6. Move to the next task\n\n")
+	b.WriteString("### Rules\n")
+	b.WriteString("- Stay within the files listed in scope for each task. Ask before modifying others.\n")
+	b.WriteString("- Do NOT modify the plan file directly — use `etch progress` commands instead.\n")
+	b.WriteString("- Log updates frequently so future sessions have context.\n")
+	b.WriteString("- Complete each task fully before starting the next one.\n")
+
+	return b.String()
+}
+
+// formatFeatureTaskAnnotation formats the annotation for a task in the plan state
+// section of a feature context.
+func formatFeatureTaskAnnotation(t *models.Task, feature *models.Feature, activeTasks []*models.Task, status models.Status) string {
+	// Check if this task is one of the active tasks in the feature.
+	for _, at := range activeTasks {
+		if t.FullID() == at.FullID() {
+			return "(in_progress — included in this feature run)"
+		}
+	}
+	switch status {
+	case models.StatusCompleted:
+		return "(completed)"
+	case models.StatusInProgress:
+		return "(in_progress)"
+	case models.StatusBlocked:
+		return "(blocked)"
+	case models.StatusFailed:
+		return "(failed)"
+	case models.StatusPending:
+		if len(t.DependsOn) > 0 {
+			depIDs := make([]string, len(t.DependsOn))
+			for i, dep := range t.DependsOn {
+				depIDs[i] = extractTaskID(dep)
+			}
+			return fmt.Sprintf("(pending, depends on %s)", strings.Join(depIDs, ", "))
+		}
+		return "(pending)"
+	default:
+		return fmt.Sprintf("(%s)", status)
+	}
 }
 
 func sessionNumberFromPath(path string) int {

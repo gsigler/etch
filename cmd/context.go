@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	etchcontext "github.com/gsigler/etch/internal/context"
@@ -27,6 +28,11 @@ func contextCmd() *cli.Command {
 				Name:    "task",
 				Aliases: []string{"t"},
 				Usage:   "task ID (e.g. 1.2)",
+			},
+			&cli.StringFlag{
+				Name:    "feature",
+				Aliases: []string{"f"},
+				Usage:   "feature number (e.g. 2) — assemble context for an entire feature",
 			},
 		},
 		Action: func(c *cli.Context) error {
@@ -83,7 +89,70 @@ func resolveContextArgs(c *cli.Context) (*resolvedContext, error) {
 	return &resolvedContext{RootDir: rootDir, Task: task, Result: result}, nil
 }
 
+// resolvedFeature holds the results of feature argument resolution and context assembly.
+type resolvedFeature struct {
+	RootDir string
+	Feature *models.Feature
+	Result  etchcontext.FeatureResult
+}
+
+// resolveFeatureArgs parses CLI arguments, resolves the plan and feature, and
+// assembles the feature context. Shared between `etch context` and `etch run`.
+func resolveFeatureArgs(c *cli.Context) (*resolvedFeature, error) {
+	rootDir, err := findProjectRoot()
+	if err != nil {
+		return nil, err
+	}
+
+	plans, err := etchcontext.DiscoverPlans(rootDir)
+	if err != nil {
+		return nil, err
+	}
+
+	planSlug := c.String("plan")
+	featureStr := c.String("feature")
+
+	featureNum, err := strconv.Atoi(featureStr)
+	if err != nil {
+		return nil, etcherr.Usage(fmt.Sprintf("invalid feature number: %q", featureStr)).
+			WithHint("feature must be a number, e.g. --feature 2")
+	}
+
+	// Auto-select plan if not specified.
+	if planSlug == "" && len(plans) > 1 {
+		needsPicker, ambiguousPlans := etchcontext.NeedsPlanPicker(plans, rootDir)
+		if needsPicker {
+			slug, err := pickPlan(ambiguousPlans)
+			if err != nil {
+				return nil, err
+			}
+			planSlug = slug
+		}
+	}
+
+	plan, feature, err := etchcontext.ResolveFeature(plans, planSlug, featureNum)
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := etchcontext.AssembleFeature(rootDir, plan, feature)
+	if err != nil {
+		return nil, err
+	}
+
+	return &resolvedFeature{RootDir: rootDir, Feature: feature, Result: result}, nil
+}
+
 func runContext(c *cli.Context) error {
+	if c.String("feature") != "" && c.String("task") != "" {
+		return etcherr.Usage("--feature and --task are mutually exclusive").
+			WithHint("use --feature to target an entire feature, or --task for a single task")
+	}
+
+	if c.String("feature") != "" {
+		return runFeatureContext(c)
+	}
+
 	rc, err := resolveContextArgs(c)
 	if err != nil {
 		return err
@@ -104,6 +173,34 @@ func runContext(c *cli.Context) error {
 
 	if result.TokenEstimate > 80000 {
 		fmt.Println("  ⚠ Warning: context exceeds 80K tokens — consider trimming the plan overview or splitting the task.")
+		fmt.Println()
+	}
+
+	fmt.Printf("  Ready to run:\n")
+	fmt.Printf("    cat %s | claude\n", relContext)
+
+	return nil
+}
+
+func runFeatureContext(c *cli.Context) error {
+	rf, err := resolveFeatureArgs(c)
+	if err != nil {
+		return err
+	}
+
+	feature := rf.Feature
+	result := rf.Result
+	rootDir := rf.RootDir
+
+	relContext, _ := filepath.Rel(rootDir, result.ContextPath)
+
+	fmt.Printf("Context assembled for Feature %d — %s (%d tasks, session %03d)\n\n",
+		feature.Number, feature.Title, len(result.ProgressPaths), result.SessionNum)
+	fmt.Printf("  Context file:  %s\n", relContext)
+	fmt.Printf("  Token estimate: ~%dk tokens\n\n", result.TokenEstimate/1000)
+
+	if result.TokenEstimate > 80000 {
+		fmt.Println("  ⚠ Warning: context exceeds 80K tokens — consider trimming the plan overview or splitting the feature.")
 		fmt.Println()
 	}
 

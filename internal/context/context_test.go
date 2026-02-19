@@ -1034,6 +1034,414 @@ Description here.
 	}
 }
 
+// --- Feature-level tests ---
+
+func TestResolveFeature_Valid(t *testing.T) {
+	dir := t.TempDir()
+	writePlanFile(t, dir, "auth-system", multiFeaturePlan)
+
+	plans, err := DiscoverPlans(dir)
+	if err != nil {
+		t.Fatalf("DiscoverPlans: %v", err)
+	}
+
+	plan, feature, err := ResolveFeature(plans, "", 2)
+	if err != nil {
+		t.Fatalf("ResolveFeature: %v", err)
+	}
+	if plan.Slug != "auth-system" {
+		t.Errorf("plan = %q, want auth-system", plan.Slug)
+	}
+	if feature.Number != 2 {
+		t.Errorf("feature number = %d, want 2", feature.Number)
+	}
+	if feature.Title != "Login Endpoints" {
+		t.Errorf("feature title = %q, want Login Endpoints", feature.Title)
+	}
+}
+
+func TestResolveFeature_InvalidNumber(t *testing.T) {
+	dir := t.TempDir()
+	writePlanFile(t, dir, "auth-system", multiFeaturePlan)
+
+	plans, err := DiscoverPlans(dir)
+	if err != nil {
+		t.Fatalf("DiscoverPlans: %v", err)
+	}
+
+	_, _, err = ResolveFeature(plans, "", 99)
+	if err == nil {
+		t.Error("expected error for invalid feature number, got nil")
+	}
+}
+
+func TestResolveFeature_WithPlanSlug(t *testing.T) {
+	dir := t.TempDir()
+	writePlanFile(t, dir, "auth-system", multiFeaturePlan)
+	writePlanFile(t, dir, "rate-limiting", singleFeaturePlan)
+
+	plans, err := DiscoverPlans(dir)
+	if err != nil {
+		t.Fatalf("DiscoverPlans: %v", err)
+	}
+
+	plan, feature, err := ResolveFeature(plans, "auth-system", 1)
+	if err != nil {
+		t.Fatalf("ResolveFeature: %v", err)
+	}
+	if plan.Slug != "auth-system" {
+		t.Errorf("plan = %q, want auth-system", plan.Slug)
+	}
+	if feature.Number != 1 {
+		t.Errorf("feature number = %d, want 1", feature.Number)
+	}
+}
+
+func TestResolveFeature_InvalidPlanSlug(t *testing.T) {
+	dir := t.TempDir()
+	writePlanFile(t, dir, "auth-system", multiFeaturePlan)
+
+	plans, err := DiscoverPlans(dir)
+	if err != nil {
+		t.Fatalf("DiscoverPlans: %v", err)
+	}
+
+	_, _, err = ResolveFeature(plans, "nonexistent", 1)
+	if err == nil {
+		t.Error("expected error for invalid plan slug, got nil")
+	}
+}
+
+func TestFeaturePendingTasks_AllPending(t *testing.T) {
+	dir := t.TempDir()
+	writePlanFile(t, dir, "auth-system", multiFeaturePlan)
+
+	plans, err := DiscoverPlans(dir)
+	if err != nil {
+		t.Fatalf("DiscoverPlans: %v", err)
+	}
+
+	plan := plans[0]
+	feature := &plan.Features[1] // Feature 2: Login Endpoints
+	allProgress := map[string][]models.SessionProgress{}
+
+	tasks := featurePendingTasks(plan, feature, allProgress)
+
+	// Task 2.1 depends on 1.1 (completed in plan), so it should be included.
+	// Task 2.2 depends on 2.1, which is intra-feature, so it should also be included.
+	if len(tasks) != 2 {
+		t.Fatalf("got %d tasks, want 2", len(tasks))
+	}
+	if tasks[0].FullID() != "2.1" {
+		t.Errorf("tasks[0] = %q, want 2.1", tasks[0].FullID())
+	}
+	if tasks[1].FullID() != "2.2" {
+		t.Errorf("tasks[1] = %q, want 2.2", tasks[1].FullID())
+	}
+}
+
+func TestFeaturePendingTasks_SomeCompleted(t *testing.T) {
+	dir := t.TempDir()
+	writePlanFile(t, dir, "auth-system", multiFeaturePlan)
+
+	plans, err := DiscoverPlans(dir)
+	if err != nil {
+		t.Fatalf("DiscoverPlans: %v", err)
+	}
+
+	plan := plans[0]
+	feature := &plan.Features[1] // Feature 2: Login Endpoints
+
+	// Mark 2.1 as completed via progress.
+	allProgress := map[string][]models.SessionProgress{
+		"2.1": {{TaskID: "2.1", SessionNumber: 1, Status: "completed"}},
+	}
+
+	tasks := featurePendingTasks(plan, feature, allProgress)
+
+	// Only 2.2 should remain (2.1 completed).
+	if len(tasks) != 1 {
+		t.Fatalf("got %d tasks, want 1", len(tasks))
+	}
+	if tasks[0].FullID() != "2.2" {
+		t.Errorf("tasks[0] = %q, want 2.2", tasks[0].FullID())
+	}
+}
+
+func TestFeaturePendingTasks_AllCompleted(t *testing.T) {
+	dir := t.TempDir()
+	writePlanFile(t, dir, "auth-system", multiFeaturePlan)
+
+	plans, err := DiscoverPlans(dir)
+	if err != nil {
+		t.Fatalf("DiscoverPlans: %v", err)
+	}
+
+	plan := plans[0]
+	feature := &plan.Features[0] // Feature 1: Token Management
+
+	// Mark 1.2 as completed via progress (1.1 already completed in plan).
+	allProgress := map[string][]models.SessionProgress{
+		"1.2": {{TaskID: "1.2", SessionNumber: 1, Status: "completed"}},
+	}
+
+	tasks := featurePendingTasks(plan, feature, allProgress)
+
+	if len(tasks) != 0 {
+		t.Errorf("got %d tasks, want 0 (all completed)", len(tasks))
+	}
+}
+
+func TestFeaturePendingTasks_ExternalDepBlocked(t *testing.T) {
+	dir := t.TempDir()
+	// Create plan where feature 2 depends on an uncompleted task in feature 1.
+	planContent := `# Plan: Dep Block Test
+
+## Feature 1: Setup
+
+### Task 1.1: Setup base [pending]
+Do setup.
+
+---
+
+## Feature 2: Build
+
+### Task 2.1: Build thing [pending]
+**Depends on:** Task 1.1
+Build it.
+`
+	writePlanFile(t, dir, "dep-block", planContent)
+
+	plans, err := DiscoverPlans(dir)
+	if err != nil {
+		t.Fatalf("DiscoverPlans: %v", err)
+	}
+
+	plan := plans[0]
+	feature := &plan.Features[1] // Feature 2
+	allProgress := map[string][]models.SessionProgress{}
+
+	tasks := featurePendingTasks(plan, feature, allProgress)
+
+	// 2.1 depends on 1.1 (pending, external), so should be blocked.
+	if len(tasks) != 0 {
+		t.Errorf("got %d tasks, want 0 (external dep not met)", len(tasks))
+	}
+}
+
+func TestAssembleFeature_CreatesFilesAndContent(t *testing.T) {
+	dir := t.TempDir()
+	writePlanFile(t, dir, "auth-system", multiFeaturePlan)
+
+	plans, err := DiscoverPlans(dir)
+	if err != nil {
+		t.Fatalf("DiscoverPlans: %v", err)
+	}
+
+	plan := plans[0]
+	feature := &plan.Features[1] // Feature 2: Login Endpoints
+
+	result, err := AssembleFeature(dir, plan, feature)
+	if err != nil {
+		t.Fatalf("AssembleFeature: %v", err)
+	}
+
+	// Context file should exist.
+	if _, err := os.Stat(result.ContextPath); os.IsNotExist(err) {
+		t.Error("context file was not created")
+	}
+
+	// Filename should use feature naming.
+	base := filepath.Base(result.ContextPath)
+	if !strings.HasPrefix(base, "auth-system--feature-2--") {
+		t.Errorf("context filename = %q, want prefix auth-system--feature-2--", base)
+	}
+
+	// Progress files for each pending task.
+	if len(result.ProgressPaths) != 2 {
+		t.Fatalf("progress paths count = %d, want 2", len(result.ProgressPaths))
+	}
+	for _, taskID := range []string{"2.1", "2.2"} {
+		pp, ok := result.ProgressPaths[taskID]
+		if !ok {
+			t.Errorf("no progress path for task %s", taskID)
+			continue
+		}
+		if _, err := os.Stat(pp); os.IsNotExist(err) {
+			t.Errorf("progress file for task %s was not created", taskID)
+		}
+	}
+
+	// Read context and verify content.
+	content, _ := os.ReadFile(result.ContextPath)
+	ctx := string(content)
+
+	requiredStrings := []string{
+		"# Etch Context — Feature Implementation",
+		"You are working on an entire feature",
+		"## Plan: Auth System",
+		"## Current Plan State",
+		"## Your Feature: Feature 2 — Login Endpoints",
+		"You are working on **2 tasks**",
+		"## Task 1 of 2: Task 2.1 — Registration",
+		"## Task 2 of 2: Task 2.2 — Login",
+		"### Acceptance Criteria",
+		"- [ ] User can register",
+		"- [ ] User can login",
+		"etch progress start -p auth-system -t 2.1",
+		"etch progress done -p auth-system -t 2.2",
+		"## Workflow",
+		"Work through the tasks **in order**",
+		"Complete each task fully before starting the next one.",
+	}
+	for _, s := range requiredStrings {
+		if !strings.Contains(ctx, s) {
+			t.Errorf("context missing required string: %q", s)
+		}
+	}
+
+	// Token estimate should be reasonable.
+	if result.TokenEstimate < 100 {
+		t.Errorf("token estimate = %d, seems too low", result.TokenEstimate)
+	}
+}
+
+func TestAssembleFeature_SingleTask(t *testing.T) {
+	dir := t.TempDir()
+	writePlanFile(t, dir, "auth-system", multiFeaturePlan)
+
+	plans, err := DiscoverPlans(dir)
+	if err != nil {
+		t.Fatalf("DiscoverPlans: %v", err)
+	}
+
+	plan := plans[0]
+	feature := &plan.Features[0] // Feature 1: Token Management (1.1 completed, 1.2 pending)
+
+	result, err := AssembleFeature(dir, plan, feature)
+	if err != nil {
+		t.Fatalf("AssembleFeature: %v", err)
+	}
+
+	// Should have one progress file (only 1.2 is pending).
+	if len(result.ProgressPaths) != 1 {
+		t.Fatalf("progress paths count = %d, want 1", len(result.ProgressPaths))
+	}
+	if _, ok := result.ProgressPaths["1.2"]; !ok {
+		t.Error("expected progress path for task 1.2")
+	}
+
+	content, _ := os.ReadFile(result.ContextPath)
+	ctx := string(content)
+
+	if !strings.Contains(ctx, "You are working on **1 tasks**") {
+		t.Error("should indicate 1 task")
+	}
+	if !strings.Contains(ctx, "## Task 1 of 1: Task 1.2") {
+		t.Error("context should include the single pending task")
+	}
+}
+
+func TestAssembleFeature_AllCompleted_ReturnsError(t *testing.T) {
+	dir := t.TempDir()
+	planContent := `# Plan: All Done Feature
+
+## Feature 1: Core
+
+### Task 1.1: First [completed]
+Done.
+
+### Task 1.2: Second [completed]
+Also done.
+`
+	writePlanFile(t, dir, "all-done-feature", planContent)
+
+	plans, err := DiscoverPlans(dir)
+	if err != nil {
+		t.Fatalf("DiscoverPlans: %v", err)
+	}
+
+	plan := plans[0]
+	feature := &plan.Features[0]
+
+	_, err = AssembleFeature(dir, plan, feature)
+	if err == nil {
+		t.Error("expected error when all tasks in feature are completed, got nil")
+	}
+}
+
+func TestAssembleFeature_TaskAnnotations(t *testing.T) {
+	dir := t.TempDir()
+	writePlanFile(t, dir, "auth-system", multiFeaturePlan)
+
+	plans, err := DiscoverPlans(dir)
+	if err != nil {
+		t.Fatalf("DiscoverPlans: %v", err)
+	}
+
+	plan := plans[0]
+	feature := &plan.Features[1] // Feature 2
+
+	result, err := AssembleFeature(dir, plan, feature)
+	if err != nil {
+		t.Fatalf("AssembleFeature: %v", err)
+	}
+
+	content, _ := os.ReadFile(result.ContextPath)
+	ctx := string(content)
+
+	// Active tasks should be annotated as "included in this feature run".
+	if !strings.Contains(ctx, "(in_progress — included in this feature run)") {
+		t.Error("active tasks should be annotated as included in feature run")
+	}
+	// Completed task 1.1 should show (completed).
+	if !strings.Contains(ctx, "✓ Task 1.1: Create token service (completed)") {
+		t.Error("completed task should have ✓ icon and (completed) annotation")
+	}
+}
+
+func TestFormatFeatureTaskAnnotation(t *testing.T) {
+	feature := &models.Feature{Number: 2}
+	activeTasks := []*models.Task{
+		{FeatureNumber: 2, TaskNumber: 1},
+		{FeatureNumber: 2, TaskNumber: 2},
+	}
+
+	tests := []struct {
+		task   *models.Task
+		status models.Status
+		want   string
+	}{
+		{
+			&models.Task{FeatureNumber: 2, TaskNumber: 1},
+			models.StatusPending,
+			"(in_progress — included in this feature run)",
+		},
+		{
+			&models.Task{FeatureNumber: 1, TaskNumber: 1},
+			models.StatusCompleted,
+			"(completed)",
+		},
+		{
+			&models.Task{FeatureNumber: 1, TaskNumber: 2},
+			models.StatusPending,
+			"(pending)",
+		},
+		{
+			&models.Task{FeatureNumber: 3, TaskNumber: 1, DependsOn: []string{"Task 2.1"}},
+			models.StatusPending,
+			"(pending, depends on 2.1)",
+		},
+	}
+
+	for i, tt := range tests {
+		got := formatFeatureTaskAnnotation(tt.task, feature, activeTasks, tt.status)
+		if got != tt.want {
+			t.Errorf("test %d: formatFeatureTaskAnnotation = %q, want %q", i, got, tt.want)
+		}
+	}
+}
+
 func TestAutoSelect_WithProgressOverride(t *testing.T) {
 	dir := t.TempDir()
 	// Plan where 1.1 is marked pending in plan, but completed via progress.
