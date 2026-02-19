@@ -94,7 +94,7 @@ func TestRunList_MultiplePlans(t *testing.T) {
 	writePlan(t, dir, "beta", planBeta)
 
 	output := captureStdout(t, func() {
-		err := runList()
+		err := runList(false)
 		if err != nil {
 			t.Fatalf("runList() error: %v", err)
 		}
@@ -129,12 +129,67 @@ func TestRunList_NoPlans(t *testing.T) {
 	dir := setupEtchProject(t)
 	chdirTo(t, dir)
 
-	err := runList()
+	err := runList(false)
 	if err == nil {
 		t.Fatal("expected error when no plans exist")
 	}
 	if !strings.Contains(err.Error(), "no plans") {
 		t.Errorf("expected 'no plans' error, got: %v", err)
+	}
+}
+
+const planDone = `# Plan: Done Project
+
+## Feature 1: Core
+### Task 1.1: Setup [completed]
+- Set up the project
+`
+
+func TestRunList_ShowsSlugs(t *testing.T) {
+	dir := setupEtchProject(t)
+	chdirTo(t, dir)
+
+	writePlan(t, dir, "alpha", planAlpha)
+
+	output := captureStdout(t, func() {
+		if err := runList(false); err != nil {
+			t.Fatalf("runList() error: %v", err)
+		}
+	})
+
+	if !strings.Contains(output, "alpha") {
+		t.Errorf("expected slug 'alpha' in output, got:\n%s", output)
+	}
+}
+
+func TestRunList_HidesCompleted(t *testing.T) {
+	dir := setupEtchProject(t)
+	chdirTo(t, dir)
+
+	writePlan(t, dir, "alpha", planAlpha)
+	writePlan(t, dir, "done-project", planDone)
+
+	// Default: hide completed plans.
+	output := captureStdout(t, func() {
+		if err := runList(false); err != nil {
+			t.Fatalf("runList() error: %v", err)
+		}
+	})
+	if strings.Contains(output, "Done Project") {
+		t.Errorf("expected completed plan to be hidden, got:\n%s", output)
+	}
+	if !strings.Contains(output, "Alpha Project") {
+		t.Errorf("expected incomplete plan to appear, got:\n%s", output)
+	}
+
+	// --all: show completed plans.
+	output = captureStdout(t, func() {
+		if err := runList(true); err != nil {
+			t.Fatalf("runList() error: %v", err)
+		}
+	})
+	if !strings.Contains(output, "Done Project") {
+		t.Errorf("expected completed plan with --all, got:\n%s", output)
 	}
 }
 

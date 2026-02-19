@@ -13,13 +13,19 @@ func listCmd() *cli.Command {
 	return &cli.Command{
 		Name:  "list",
 		Usage: "List available plans",
+		Flags: []cli.Flag{
+			&cli.BoolFlag{
+				Name:  "all",
+				Usage: "Show all plans including completed ones",
+			},
+		},
 		Action: func(c *cli.Context) error {
-			return runList()
+			return runList(c.Bool("all"))
 		},
 	}
 }
 
-func runList() error {
+func runList(showAll bool) error {
 	rootDir, err := findProjectRoot()
 	if err != nil {
 		return err
@@ -39,11 +45,14 @@ func runList() error {
 		if total > 0 {
 			pct = completed * 100 / total
 		}
+		if !showAll && total > 0 && completed == total {
+			continue
+		}
 		prioTag := "[ ]"
 		if plan.Priority > 0 {
 			prioTag = fmt.Sprintf("[%d]", plan.Priority)
 		}
-		fmt.Printf("%s %-30s  %d/%d tasks  %3d%%\n", prioTag, plan.Title, completed, total, pct)
+		fmt.Printf("%s %-25s  %-30s  %d/%d tasks  %3d%%\n", prioTag, plan.Slug, plan.Title, completed, total, pct)
 	}
 
 	return nil
