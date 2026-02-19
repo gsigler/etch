@@ -68,7 +68,9 @@ A plan markdown file follows this exact structure:
 - Every task MUST have **Complexity:** (small, medium, or large)
 - Every task MUST have **Files:** listing specific files it will create or modify
 - Tasks MAY have **Depends on:** referencing other task IDs (e.g. "Task 1.1")
-- Every task MUST have at least one acceptance criterion
+- Each task should have 3-5 acceptance criteria
+- Include at least one verification criterion per task (e.g., "Tests pass", "No regressions in existing tests")
+- Every feature MUST end with a validation task that verifies the implementation works (e.g., writing tests, running the app, checking edge cases)
 - Use single-feature format when there is only one logical grouping
 - Use multi-feature format when work spans distinct areas
 - Task descriptions should be specific enough that an AI agent can implement them without ambiguity

@@ -77,16 +77,43 @@ Create the plan markdown file following this exact format:
 
 ## Plan format rules
 
+### Sizing guidance
+- Plans should have enough tasks to fully implement the feature. A typical plan has 5-15 tasks across 2-4 features. Don't under-scope — it's better to have more granular tasks than to combine too much into one.
+- Each task should be completable in a single focused session (agent-sized)
+
+### Task requirements
 - Every task MUST have a status tag: `[pending]`
 - Every task MUST have `**Complexity:**` (small, medium, or large)
 - Every task MUST have `**Files:**` listing specific files it will create or modify
 - Tasks MAY have `**Depends on:**` referencing other task IDs (e.g. "Task 1.1")
-- Every task MUST have at least one acceptance criterion
+- Complexity ratings: **small** = isolated change in 1-2 files, **medium** = multiple files or moderate logic, **large** = cross-cutting or architecturally significant
+- Task descriptions should be specific enough that an AI agent can implement them without ambiguity
+
+### Acceptance criteria
+- Each task should have 3-5 acceptance criteria
+- Include at least one verification criterion per task (e.g., "Tests pass", "Feature works in the UI", "No regressions in existing tests")
+
+### Validation tasks
+- Every feature MUST end with a validation task that verifies the implementation works (e.g., writing tests, running the app, checking edge cases)
 - Use single-feature format when there is only one logical grouping
 - Use multi-feature format when work spans distinct areas
-- Task descriptions should be specific enough that an AI agent can implement them without ambiguity
-- Each task should be completable in a single focused session (agent-sized)
-- Complexity ratings: **small** = isolated change in 1-2 files, **medium** = multiple files or moderate logic, **large** = cross-cutting or architecturally significant
+
+### Validation task example
+
+```markdown
+### Task 1.3: Validate authentication flow [pending]
+**Complexity:** small
+**Files:** tests/test_auth.py
+**Depends on:** Task 1.2
+
+Run the full auth test suite and manually verify the login flow works end-to-end.
+
+**Acceptance Criteria:**
+- [ ] All existing auth tests pass
+- [ ] New tests cover the added login endpoint
+- [ ] Manual test: can log in and receive a valid token
+- [ ] No regressions in other test suites
+```
 
 ## Step 3: Save the plan
 

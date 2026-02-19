@@ -158,6 +158,10 @@ etch progress criteria -p my-plan -t 1.3 --check "Shows inline errors"
 etch progress done -p my-plan -t 1.3
 ```
 
+## Permissions
+
+When launched via `etch run`, Claude Code sessions automatically approve all `etch` CLI commands (e.g., `etch progress`, `etch context`, `etch status`). You do not need to ask for permission to run etch commands — they are pre-allowed via `--allowedTools`.
+
 ## Key concepts
 
 - **Completion percentage** is computed by `etch status` from checked vs total acceptance criteria. It is not stored anywhere — you don't need to track or report it.
